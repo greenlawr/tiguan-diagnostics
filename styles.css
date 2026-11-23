@@ -66,7 +66,7 @@ body {
 }
 .lock[hidden] { display: none; }
 .lock-box { width: 100%; max-width: 360px; text-align: center; }
-.lock-icon { font-size: 44px; margin-bottom: 8px; }
+.lock-icon { width: 88px; height: 88px; margin: 0 auto 12px; display: block; filter: drop-shadow(0 6px 14px rgba(0,0,0,.18)); }
 .lock-box h1 { font-size: 28px; margin: 0 0 6px; }
 .lock-box form { margin-top: 18px; }
 .lock-box input {
@@ -292,7 +292,8 @@ h3 { margin-top: 18px; }
   padding: 16px; min-height: 104px; position: relative;
 }
 .tile-btn .tile-icon { font-size: 28px; line-height: 1; }
-.tile-btn .ic { width: 30px; height: 30px; color: var(--accent); }
+.tile-btn .ic { width: 44px; height: 44px; }
+.ic.rich { filter: drop-shadow(0 2px 3px rgba(0,0,0,.18)); }
 .tile-btn .tile-label { font-weight: 600; font-size: 15px; }
 .ic { width: 24px; height: 24px; flex: 0 0 auto; }
 .nav-pill .ic, .life-back .ic { vertical-align: middle; }

@@ -1,36 +1,111 @@
-// A small, cohesive line-icon set (stroke-based, inherits currentColor so it
-// themes automatically). Replaces the emoji for a more designed, premium feel.
+// Rich, app-style icons: each one is a coloured gradient tile with a soft gloss
+// and a bold white symbol, so every area of the app has its own recognisable
+// colour. Pure inline SVG (no image files), so they stay crisp and work offline.
 
-const PATHS = {
-  gauge: '<path d="M12 13a1 1 0 1 0 0-2 1 1 0 0 0 0 2z"/><path d="M12 12l4-3"/><path d="M4 18a9 9 0 1 1 16 0"/>',
-  car: '<path d="M5 12l1.5-4A2 2 0 0 1 8.4 7h7.2a2 2 0 0 1 1.9 1.4L19 12"/><path d="M4 12h16v5h-2.5"/><path d="M6.5 17H4v-5"/><path d="M8.5 17h7"/><circle cx="7" cy="17" r="1.4"/><circle cx="17" cy="17" r="1.4"/>',
-  cart: '<circle cx="9" cy="20" r="1.3"/><circle cx="18" cy="20" r="1.3"/><path d="M3 4h2l2.2 11h10.3l1.8-7H6.5"/>',
-  doc: '<path d="M7 3h7l4 4v14H7z"/><path d="M14 3v4h4"/><path d="M10 13h5M10 16.5h5"/>',
-  bolt: '<path d="M13 2 5 13h5l-1 9 9-12h-5z"/>',
-  money: '<rect x="2.5" y="6" width="19" height="12" rx="2.5"/><circle cx="12" cy="12" r="2.6"/><path d="M6 9.5v5M18 9.5v5"/>',
-  house: '<path d="M4 11l8-6 8 6"/><path d="M6 10v9h12v-9"/><path d="M10 19v-5h4v5"/>',
-  heart: '<path d="M12 20s-6.5-4.2-9-8.3A4.6 4.6 0 0 1 12 6.5a4.6 4.6 0 0 1 9 5.2C18.5 15.8 12 20 12 20z"/>',
-  box: '<path d="M4 7.5 12 4l8 3.5v9L12 20l-8-3.5z"/><path d="M4 7.5 12 11l8-3.5M12 11v9"/>',
-  card: '<rect x="2.5" y="5.5" width="19" height="13" rx="2.5"/><path d="M2.5 10h19"/><path d="M6 15h4"/>',
-  fuel: '<path d="M5 20V6a2 2 0 0 1 2-2h5a2 2 0 0 1 2 2v14"/><path d="M4 20h11"/><path d="M8 9h3"/><path d="M14 10h2.5a1.5 1.5 0 0 1 1.5 1.5V16a1.5 1.5 0 0 0 3 0v-7l-2.5-2.5"/>',
-  gear: '<circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M4.5 7.5l2 1.2M17.5 14.3l2 1.2M4.5 16.5l2-1.2M17.5 9.7l2-1.2"/>',
-  refresh: '<path d="M20 11a8 8 0 1 0-1 5"/><path d="M20 5v5h-5"/>',
-  calendar: '<rect x="3.5" y="5" width="17" height="15" rx="2.5"/><path d="M3.5 9.5h17M8 3v4M16 3v4"/>',
-  split: '<circle cx="7" cy="7" r="3"/><circle cx="17" cy="17" r="3"/><path d="M10 7h7v7"/>',
-  tasks: '<path d="M4 6l2 2 3-3"/><path d="M4 13l2 2 3-3"/><path d="M12 7h8M12 14h8M4 20h16"/>',
+// Per-icon colour: [top-left, bottom-right]. The darker stop also colours the
+// small cut-out details inside each symbol.
+const COLOURS = {
+  gauge: ['#ff8a6b', '#e2382c'],
+  car: ['#5ab8ff', '#1f5fd6'],
+  cart: ['#4fdc95', '#109158'],
+  doc: ['#8c9cff', '#4a4fd1'],
+  bolt: ['#ffd25e', '#f08a06'],
+  money: ['#3ee0a5', '#048a64'],
+  house: ['#ffb05e', '#ea6512'],
+  heart: ['#ff86aa', '#e0305f'],
+  box: ['#e0ae74', '#a5612a'],
+  card: ['#cf95ff', '#8434dc'],
+  fuel: ['#3fe0c8', '#0b8b80'],
+  gear: ['#a7b4c6', '#4f5c70'],
+  refresh: ['#52c8ff', '#0679c2'],
+  calendar: ['#ff8a96', '#dd2a4a'],
+  share: ['#7fb2ff', '#3a4fd8'],
+  split: ['#9aa2ff', '#5b3fe0'],
+  tasks: ['#b9ec4d', '#4f9a0f'],
 };
 
+// Symbols drawn on a 48×48 grid. `D` is replaced with the tile's dark colour.
+const GLYPHS = {
+  gauge: `<path d="M12.5 31a11.5 11.5 0 0 1 23 0z" fill="#fff" opacity=".28"/>
+    <path d="M12.5 31a11.5 11.5 0 0 1 23 0" fill="none" stroke="#fff" stroke-width="3.4" stroke-linecap="round"/>
+    <path d="M24 31l7-8.5" stroke="#fff" stroke-width="3.2" stroke-linecap="round"/>
+    <circle cx="24" cy="31" r="3.4" fill="#fff"/>`,
+  car: `<path d="M11.5 27.5l2.7-6.6a3 3 0 0 1 2.8-1.9h14a3 3 0 0 1 2.8 1.9l2.7 6.6v5a1.5 1.5 0 0 1-1.5 1.5h-22A1.5 1.5 0 0 1 11.5 32.5z" fill="#fff"/>
+    <path d="M16.6 26.5l1.7-4.3h11.4l1.7 4.3z" fill="D" opacity=".55"/>
+    <circle cx="17" cy="34" r="3.4" fill="D"/><circle cx="17" cy="34" r="1.6" fill="#fff"/>
+    <circle cx="31" cy="34" r="3.4" fill="D"/><circle cx="31" cy="34" r="1.6" fill="#fff"/>`,
+  cart: `<path d="M9.5 13h3.6l3.6 16.5h16" fill="none" stroke="#fff" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M14.6 16.5h22.4l-2.7 10.2a2 2 0 0 1-1.9 1.5H17.2z" fill="#fff"/>
+    <path d="M21 20v5M26 20v5M31 20v5" stroke="D" stroke-width="1.6" stroke-linecap="round" opacity=".45"/>
+    <circle cx="19" cy="34.5" r="2.6" fill="#fff"/><circle cx="31" cy="34.5" r="2.6" fill="#fff"/>`,
+  doc: `<path d="M16 10.5h11l7.5 7.5v17.5a2.5 2.5 0 0 1-2.5 2.5H16a2.5 2.5 0 0 1-2.5-2.5V13a2.5 2.5 0 0 1 2.5-2.5z" fill="#fff"/>
+    <path d="M27 10.5V16a2 2 0 0 0 2 2h5.5z" fill="D" opacity=".35"/>
+    <rect x="18" y="22" width="12" height="2.4" rx="1.2" fill="D" opacity=".55"/>
+    <rect x="18" y="26.8" width="12" height="2.4" rx="1.2" fill="D" opacity=".55"/>
+    <rect x="18" y="31.6" width="7.5" height="2.4" rx="1.2" fill="D" opacity=".55"/>`,
+  bolt: `<path d="M27.5 8.5L14.5 27h9l-2.5 12.5L34 20.5h-9z" fill="#fff" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/>`,
+  money: `<rect x="9.5" y="15" width="29" height="18" rx="3.5" fill="#fff"/>
+    <circle cx="24" cy="24" r="5" fill="D"/>
+    <text x="24" y="27.4" text-anchor="middle" font-family="Arial,Helvetica,sans-serif" font-weight="700" font-size="9" fill="#fff">£</text>
+    <circle cx="14.5" cy="24" r="1.6" fill="D" opacity=".45"/><circle cx="33.5" cy="24" r="1.6" fill="D" opacity=".45"/>`,
+  house: `<path d="M24 10.5l13.4 11.6a1.3 1.3 0 0 1-.85 2.3H34.5V35a2.5 2.5 0 0 1-2.5 2.5H16a2.5 2.5 0 0 1-2.5-2.5V24.4h-2.05a1.3 1.3 0 0 1-.85-2.3z" fill="#fff"/>
+    <rect x="21" y="27.5" width="6" height="10" rx="1.6" fill="D" opacity=".7"/>`,
+  heart: `<path d="M24 37C14.5 30.6 10.5 26 10.5 20.6a6.6 6.6 0 0 1 13.5-2.9 6.6 6.6 0 0 1 13.5 2.9C37.5 26 33.5 30.6 24 37z" fill="#fff"/>
+    <path d="M15.5 24.5h4.3l2.2-3.6 3.4 6.6 2.1-3h5" fill="none" stroke="D" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" opacity=".7"/>`,
+  box: `<path d="M24 10.5l12.5 6.3L24 23.1l-12.5-6.3z" fill="#fff" opacity=".75"/>
+    <path d="M11.5 16.8L24 23.1v14.4l-12.5-6.3z" fill="#fff"/>
+    <path d="M36.5 16.8L24 23.1v14.4l12.5-6.3z" fill="#fff" opacity=".88"/>
+    <path d="M17.8 13.6l12.5 6.3v4.6" fill="none" stroke="D" stroke-width="2" stroke-linejoin="round" opacity=".45"/>`,
+  card: `<rect x="9.5" y="13.5" width="29" height="21" rx="3.5" fill="#fff"/>
+    <rect x="9.5" y="18" width="29" height="4" fill="D" opacity=".75"/>
+    <rect x="13.5" y="26" width="7" height="4.6" rx="1.2" fill="D" opacity=".4"/>
+    <rect x="24" y="27.4" width="10.5" height="2" rx="1" fill="D" opacity=".3"/>`,
+  fuel: `<rect x="12.5" y="11" width="15" height="25" rx="2.8" fill="#fff"/>
+    <rect x="15.5" y="14.5" width="9" height="6.5" rx="1.3" fill="D" opacity=".55"/>
+    <path d="M27.5 19h2.8a2.6 2.6 0 0 1 2.6 2.6V31a2 2 0 0 0 4 0V19.5l-3-3.2" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+    <rect x="10.5" y="35" width="19" height="3" rx="1.5" fill="#fff"/>`,
+  gear: `<path d="M33.8 21.8 L36.9 22.3 L36.9 25.7 L33.8 26.2 L32.4 29.4 L34.3 31.9 L31.9 34.3 L29.4 32.4 L26.2 33.8 L25.7 36.9 L22.3 36.9 L21.8 33.8 L18.6 32.4 L16.1 34.3 L13.7 31.9 L15.6 29.4 L14.2 26.2 L11.1 25.7 L11.1 22.3 L14.2 21.8 L15.6 18.6 L13.7 16.1 L16.1 13.7 L18.6 15.6 L21.8 14.2 L22.3 11.1 L25.7 11.1 L26.2 14.2 L29.4 15.6 L31.9 13.7 L34.3 16.1 L32.4 18.6Z" fill="#fff" stroke="#fff" stroke-width="1.2" stroke-linejoin="round"/>
+    <circle cx="24" cy="24" r="4.6" fill="D"/>`,
+  refresh: `<path d="M15 22a9.5 9.5 0 0 1 16.6-5.4" fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round"/>
+    <path d="M33.5 11.5v6.8h-6.8" fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M33 26a9.5 9.5 0 0 1-16.6 5.4" fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round"/>
+    <path d="M14.5 36.5v-6.8h6.8" fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>`,
+  calendar: `<rect x="11" y="13" width="26" height="24" rx="3.5" fill="#fff"/>
+    <path d="M11 16.5a3.5 3.5 0 0 1 3.5-3.5h19a3.5 3.5 0 0 1 3.5 3.5V20H11z" fill="D" opacity=".75"/>
+    <rect x="16.5" y="9.5" width="3" height="7" rx="1.5" fill="#fff"/><rect x="28.5" y="9.5" width="3" height="7" rx="1.5" fill="#fff"/>
+    <g fill="D" opacity=".5"><rect x="15" y="23.5" width="4" height="3.2" rx=".8"/><rect x="22" y="23.5" width="4" height="3.2" rx=".8"/><rect x="29" y="23.5" width="4" height="3.2" rx=".8"/><rect x="15" y="29.5" width="4" height="3.2" rx=".8"/><rect x="22" y="29.5" width="4" height="3.2" rx=".8"/></g>`,
+  share: `<circle cx="30.5" cy="19" r="4.4" fill="#fff" opacity=".7"/>
+    <path d="M23.5 34a7.5 7.5 0 0 1 15 0z" fill="#fff" opacity=".7"/>
+    <circle cx="19" cy="18.5" r="5" fill="#fff"/>
+    <path d="M10 35a9 9 0 0 1 18 0z" fill="#fff"/>`,
+  split: `<path d="M15 9.5h18v28.5l-3-2.2-3 2.2-3-2.2-3 2.2-3-2.2-3 2.2z" fill="#fff"/>
+    <rect x="18.5" y="15" width="11" height="2.4" rx="1.2" fill="D" opacity=".5"/>
+    <rect x="18.5" y="20" width="11" height="2.4" rx="1.2" fill="D" opacity=".5"/>
+    <rect x="18.5" y="25" width="6.5" height="2.4" rx="1.2" fill="D" opacity=".5"/>
+    <text x="28.5" y="31.6" text-anchor="middle" font-family="Arial,Helvetica,sans-serif" font-weight="700" font-size="8.5" fill="D">£</text>`,
+  tasks: `<rect x="12.5" y="12" width="23" height="26" rx="3" fill="#fff"/>
+    <rect x="18.5" y="9" width="11" height="5.6" rx="2" fill="D" opacity=".6"/>
+    <path d="M16.5 21.5l2.1 2.1 3.6-3.8M16.5 29.5l2.1 2.1 3.6-3.8" fill="none" stroke="D" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+    <rect x="24.5" y="21" width="7.5" height="2.2" rx="1.1" fill="D" opacity=".45"/>
+    <rect x="24.5" y="29" width="7.5" height="2.2" rx="1.1" fill="D" opacity=".45"/>`,
+};
+
+let seq = 0;
 export function icon(name) {
+  const key = GLYPHS[name] ? name : 'doc';
+  const [light, dark] = COLOURS[key];
+  const id = 'ic' + seq++;
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-  svg.setAttribute('viewBox', '0 0 24 24');
-  svg.setAttribute('fill', 'none');
-  svg.setAttribute('stroke', 'currentColor');
-  svg.setAttribute('stroke-width', '1.8');
-  svg.setAttribute('stroke-linecap', 'round');
-  svg.setAttribute('stroke-linejoin', 'round');
-  svg.setAttribute('class', 'ic');
+  svg.setAttribute('viewBox', '0 0 48 48');
+  svg.setAttribute('class', 'ic rich');
   svg.setAttribute('aria-hidden', 'true');
-  svg.innerHTML = PATHS[name] || PATHS.doc;
+  svg.innerHTML = `<defs>
+      <linearGradient id="${id}g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${light}"/><stop offset="1" stop-color="${dark}"/></linearGradient>
+      <linearGradient id="${id}s" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".32"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
+    </defs>
+    <rect width="48" height="48" rx="12.5" fill="url(#${id}g)"/>
+    <path d="M0 12.5A12.5 12.5 0 0 1 12.5 0h23A12.5 12.5 0 0 1 48 12.5V20C34 26 14 26 0 20z" fill="url(#${id}s)"/>
+    ${GLYPHS[key].replace(/"D"/g, `"${dark}"`)}`;
   return svg;
 }
 
@@ -41,6 +116,6 @@ export const TILE_ICON = {
 };
 export const SEC_ICON_NAME = {
   deliveries: 'box', documents: 'doc', utilities: 'bolt', subscriptions: 'refresh',
-  tax: 'money', home: 'house', health: 'heart', loyalty: 'card', sharing: 'calendar', shopping: 'cart',
+  tax: 'money', home: 'house', health: 'heart', loyalty: 'card', sharing: 'share', shopping: 'cart',
   bills: 'split', tasks: 'tasks',
 };
