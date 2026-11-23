@@ -1,0 +1,14 @@
+// Cloudflare deploys this Worker automatically from GitHub (Workers Builds),
+// using the settings below. The name must match the Worker in the dashboard,
+// and the KV binding must point at the existing HOUSEHOLD namespace, or the
+// shared data would be disconnected. (The namespace ID is not a secret.)
+{
+  "name": "evergreen-sync",
+  "main": "worker.js",
+  "compatibility_date": "2025-09-01",
+  "workers_dev": true,
+  "kv_namespaces": [
+    { "binding": "HOUSEHOLD", "id": "f158d25f6582436197d4b3a43beb0775" }
+  ],
+  "observability": { "enabled": true }
+}

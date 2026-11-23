@@ -13,6 +13,14 @@ A tiny, free, **zero-knowledge** sync server for Evergreen's shared Household sp
 
 Give that URL to Evergreen (Settings → Shared Household → sync server URL) on both phones, and share the one household code between you. That's it.
 
+## Automatic updates (set up once)
+
+This Worker is connected to GitHub with Cloudflare **Workers Builds**: in the dashboard, **evergreen-sync → Settings → Builds → Connect**, repository `tiguan-diagnostics`, branch `main`, root directory `sync-worker`, deploy command `npx wrangler deploy`. After that, every change to this folder on `main` deploys itself — no pasting code into the editor. `wrangler.jsonc` keeps the Worker name and the `HOUSEHOLD` KV binding, so updates never disconnect the stored data.
+
+## Calendar pass-through
+
+`GET /cal?h=<household id>&url=<calendar secret address>` fetches a Google / Outlook / iCloud calendar feed for the app (browsers can't fetch these directly). It only accepts calendar links, only for a household that already exists, and stores nothing.
+
 ## Why it's private
 
 - Both phones derive the encryption key from the shared code; the key never leaves either device.
