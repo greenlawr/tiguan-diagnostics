@@ -491,3 +491,14 @@ button:active:not(:disabled), .btn-a:active { transform: translateY(1px); }
 .child-extra { gap: 6px; margin-bottom: 6px; }
 .child-extra input { flex: 1; min-width: 0; font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 10px; min-height: 44px; }
 .sheet-panel textarea { width: 100%; font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+
+/* MOT history */
+.mot-test { border-top: 1px solid var(--line); padding: 10px 0; }
+.mot-test:first-child { border-top: 0; padding-top: 2px; }
+.mot-sum { display: flex; align-items: center; gap: 10px; cursor: pointer; list-style: none; }
+.mot-sum::-webkit-details-marker { display: none; }
+.mot-date { font-weight: 600; min-width: 96px; }
+.mot-body { padding: 8px 0 0; }
+.mot-defect { display: flex; gap: 8px; align-items: flex-start; margin: 6px 0; font-size: 14px; }
+.mot-defect .tag { flex: 0 0 auto; }
+#car-keys-help code { font-size: 13px; word-break: break-all; }

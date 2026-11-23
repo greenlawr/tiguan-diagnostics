@@ -30,6 +30,43 @@ async function authorised(request, env, hid) {
   return true;
 }
 
+// ---------- Car details (DVLA) and MOT history (DVSA) ----------
+// Keys live only here, as Cloudflare secrets: DVLA_API_KEY, and MOT_CLIENT_ID,
+// MOT_CLIENT_SECRET, MOT_API_KEY, MOT_TOKEN_URL (MOT_SCOPE optional).
+async function dvlaLookup(env, reg) {
+  if (!env.DVLA_API_KEY) return { configured: false };
+  try {
+    const r = await fetch('https://driver-vehicle-licensing.api.gov.uk/vehicle-enquiry/v1/vehicles', {
+      method: 'POST', headers: { 'x-api-key': env.DVLA_API_KEY, 'Content-Type': 'application/json' }, body: JSON.stringify({ registrationNumber: reg }),
+    });
+    if (r.status === 404) return { configured: true, notFound: true };
+    if (!r.ok) return { configured: true, error: `DVLA returned ${r.status}` };
+    return { configured: true, data: await r.json() };
+  } catch (e) { return { configured: true, error: 'DVLA could not be reached' }; }
+}
+let motToken = null; // reused while this server instance is warm
+async function motAccessToken(env) {
+  if (motToken && motToken.until > Date.now() + 60000) return motToken.value;
+  const body = new URLSearchParams({ grant_type: 'client_credentials', client_id: env.MOT_CLIENT_ID, client_secret: env.MOT_CLIENT_SECRET, scope: env.MOT_SCOPE || 'https://tapi.dvsa.gov.uk/.default' });
+  const r = await fetch(env.MOT_TOKEN_URL, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body });
+  if (!r.ok) throw new Error(`MOT sign-in returned ${r.status} — check the MOT client ID, secret and token URL`);
+  const j = await r.json();
+  motToken = { value: j.access_token, until: Date.now() + (j.expires_in || 3600) * 1000 };
+  return motToken.value;
+}
+async function motLookup(env, reg) {
+  if (!env.MOT_CLIENT_ID || !env.MOT_CLIENT_SECRET || !env.MOT_API_KEY || !env.MOT_TOKEN_URL) return { configured: false };
+  try {
+    const token = await motAccessToken(env);
+    const r = await fetch(`https://history.mot.api.gov.uk/v1/trade/vehicles/registration/${encodeURIComponent(reg)}`, {
+      headers: { Authorization: `Bearer ${token}`, 'X-API-Key': env.MOT_API_KEY, Accept: 'application/json' },
+    });
+    if (r.status === 404) return { configured: true, notFound: true };
+    if (!r.ok) return { configured: true, error: `MOT history returned ${r.status}` };
+    return { configured: true, data: await r.json() };
+  } catch (e) { return { configured: true, error: e.message || 'MOT history could not be reached' }; }
+}
+
 export default {
   async fetch(request, env) {
     if (request.method === 'OPTIONS') return new Response(null, { headers: CORS });
@@ -52,6 +89,17 @@ export default {
       const res = await fetch(target.toString(), { cf: { cacheTtl: 300 } });
       if (!res.ok) return json({ error: `the calendar returned ${res.status} — check the link` }, 502);
       return new Response(await res.text(), { headers: { 'Content-Type': 'text/calendar; charset=utf-8', 'Cache-Control': 'no-store', ...CORS } });
+    }
+
+    // Official car details + MOT history for a registration (your household only).
+    if (request.method === 'GET' && url.pathname.replace(/\/+$/, '').endsWith('/vehicle')) {
+      const hid = url.searchParams.get('h') || '';
+      if (!/^[a-f0-9]{16,64}$/.test(hid) || !(await env.HOUSEHOLD.get(hid))) return json({ error: 'unknown household — sync once first' }, 403);
+      if (!(await authorised(request, env, hid))) return json({ error: 'not allowed' }, 401);
+      const reg = (url.searchParams.get('reg') || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+      if (!/^[A-Z0-9]{2,8}$/.test(reg)) return json({ error: 'that registration doesn\'t look right' }, 400);
+      const [dvla, mot] = await Promise.all([dvlaLookup(env, reg), motLookup(env, reg)]);
+      return json({ reg, dvla, mot });
     }
 
     // Lost-phone protection.

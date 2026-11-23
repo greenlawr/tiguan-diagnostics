@@ -19,6 +19,7 @@ import { parseICS, expandEvents } from './ical.js';
 import { makeVerifier, checkVerifier } from './lost.js';
 import { ageText, nextBirthday, mask, nhsNumberValid } from './family.js';
 import { groupEvents, sameEvent } from './eventmatch.js';
+import { summariseCar } from './cardata.js';
 import { syncShared } from './sync.js';
 import { savePhoto, loadPhoto, deletePhoto, exportAllPhotos, importAllPhotos } from './photos.js';
 import { parseImport, importCount } from './import.js';
@@ -1018,6 +1019,9 @@ function initCarTab() {
   if (v.reg) $('reg-input').value = v.reg;
   for (const key of ['mot', 'tax', 'insurance', 'service']) if (v[key]) $(key + '-input').value = v[key];
   refreshRenewals();
+  renderOfficial();
+  // Keep the official record (and so the MOT / tax reminders) fresh — weekly.
+  if (v.reg && paired() && (!v.officialAt || Date.now() - v.officialAt > CAR_REFRESH_MS)) lookupCar(false);
   renderPark();
   renderFuel();
   renderService();
@@ -3150,6 +3154,94 @@ function openChildEditor(child) {
 }
 $('btn-child-add').addEventListener('click', () => openChildEditor(null));
 
+// ---------- Official car details (DVLA) + MOT history (DVSA) via your sync server ----------
+const CAR_REFRESH_MS = 7 * 86400000;
+let carLookupBusy = false;
+async function lookupCar(manual = false) {
+  if (carLookupBusy) return;
+  const v = loadVehicle();
+  const reg = cleanReg($('reg-input').value || v.reg || '');
+  const say = (msg, bad) => { if (manual || !bad) setStatus('car-lookup-status', msg, bad); };
+  if (!reg) return say('Type your registration first.', true);
+  if (!paired()) return say('This uses your sync server — set up Life → Sharing & sync first.', true);
+  carLookupBusy = true;
+  if (manual) setStatus('car-lookup-status', 'Looking up your car…');
+  try {
+    const s = settings();
+    const hid = await householdId(s.householdCode);
+    const res = await fetch(`${s.syncUrl.replace(/\/+$/, '')}/vehicle?h=${hid}&reg=${encodeURIComponent(reg)}`, { cache: 'no-store', headers: { 'X-Evergreen-Token': await writeToken(s.householdCode) } });
+    if (!res.ok) {
+      let msg = '';
+      try { msg = (await res.json()).error; } catch { /* not json */ }
+      if (msg === 'bad id') msg = 'your sync server needs updating';
+      throw new Error(msg || `the server returned ${res.status}`);
+    }
+    const j = await res.json();
+    const sum = summariseCar(j.dvla, j.mot);
+    if (sum.sources.dvla === 'not set up' && sum.sources.mot === 'not set up') {
+      return say('Not switched on yet — add your free DVLA and MOT keys (Help → Car details & MOT history).', true);
+    }
+    const v2 = loadVehicle();
+    v2.reg = reg;
+    $('reg-input').value = reg;
+    v2.official = sum;
+    v2.officialAt = Date.now();
+    if (sum.motExpiry) v2.mot = sum.motExpiry;
+    if (sum.taxDue && /taxed/i.test(sum.taxStatus)) v2.tax = sum.taxDue;
+    saveVehicle(v2);
+    for (const key of ['mot', 'tax']) if (v2[key]) $(key + '-input').value = v2[key];
+    refreshRenewals();
+    renderOfficial();
+    renderHome();
+    const problems = Object.entries(sum.sources).filter(([, st]) => st !== 'ok').map(([k, st]) => `${k === 'dvla' ? 'DVLA' : 'MOT history'}: ${st}`);
+    setStatus('car-lookup-status', problems.length ? `Updated, but — ${problems.join(' · ')}` : 'Up to date ✓', problems.length > 0);
+  } catch (e) {
+    say(`Couldn't get the details: ${e.message}`, true);
+  } finally {
+    carLookupBusy = false;
+  }
+}
+function renderOfficial() {
+  const out = $('official-out');
+  if (!out) return;
+  out.replaceChildren();
+  const o = loadVehicle().official;
+  if (!o) return;
+  const card = el('div', { class: 'card' });
+  const name = [o.make, o.model].filter(Boolean).join(' ') || o.reg;
+  const spec = [o.colour, o.year, o.fuel, o.engineCc ? `${(o.engineCc / 1000).toFixed(1)} litre` : ''].filter(Boolean).join(' · ');
+  card.append(el('h2', { text: name }), spec ? el('p', { class: 'muted', style: 'margin-top:-4px', text: spec }) : null);
+  if (o.outstandingRecall) card.append(el('div', { class: 'state-note', style: 'margin:8px 0' }, el('span', { class: 'tag urgent', text: 'Outstanding recall' }), el('span', { text: '  The manufacturer has an open safety recall for this car — book it in at a dealer (it\'s free).' })));
+  const dl = el('dl', { class: 'child-dl' });
+  const row = (label, value, tag) => { if (!value) return; dl.append(el('dt', { text: label }), el('dd', {}, el('span', { text: value }), tag || null)); };
+  const dueTag = (iso) => { const cd = iso && countdown(iso, ''); return cd ? el('span', { class: 'tag ' + cd.level, style: 'margin-left:6px', text: cd.days < 0 ? 'overdue' : `${cd.days} days` }) : null; };
+  row('Tax', [o.taxStatus, o.taxDue ? 'until ' + fmtDate(o.taxDue) : ''].filter(Boolean).join(' '), dueTag(o.taxDue));
+  row('MOT', [o.motStatus, o.motExpiry ? 'until ' + fmtDate(o.motExpiry) : ''].filter(Boolean).join(' '), dueTag(o.motExpiry));
+  row('First registered', o.firstRegistered ? new Date(o.firstRegistered + (o.firstRegistered.length === 7 ? '-01' : '') + 'T00:00:00').toLocaleDateString('en-GB', { month: 'long', year: 'numeric' }) : '');
+  row('CO₂', o.co2 != null ? `${o.co2} g/km` : '');
+  row('Average mileage', o.milesPerYear ? `about ${fmtNum(o.milesPerYear)} miles a year` : '');
+  card.append(dl, el('p', { class: 'muted small', style: 'margin:10px 0 0', text: `From the DVLA and DVSA · updated ${new Date(loadVehicle().officialAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}` }));
+  out.append(el('h3', { text: 'Official record' }), card);
+  if (!o.tests.length) return;
+  const hist = el('div', { class: 'card' });
+  o.tests.forEach((t, i) => {
+    const sum = el('summary', { class: 'mot-sum' },
+      el('span', { class: 'mot-date', text: fmtDate(t.date) }),
+      el('span', { class: 'tag ' + (t.passed ? 'ok' : 'urgent'), text: t.result }),
+      t.mileage != null ? el('span', { class: 'muted small', text: `${fmtNum(t.mileage)} mi` }) : null);
+    const body = el('div', { class: 'mot-body' });
+    if (!t.defects.length) body.append(el('p', { class: 'muted small', text: t.passed ? 'Clean pass — no advisories.' : 'No details recorded.' }));
+    for (const x of t.defects) {
+      const cls = x.type === 'DANGEROUS' || x.type === 'MAJOR' || x.type === 'FAIL' ? 'urgent' : x.type === 'MINOR' || x.type === 'PRS' ? 'soon' : 'minor';
+      body.append(el('div', { class: 'mot-defect' }, el('span', { class: 'tag ' + cls, text: x.label }), el('span', { text: x.text })));
+    }
+    if (t.passed && t.expiry) body.append(el('p', { class: 'muted small', style: 'margin:6px 0 0', text: `Valid until ${fmtDate(t.expiry)}` }));
+    hist.append(el('details', { class: 'mot-test', ...(i === 0 ? { open: '' } : {}) }, sum, body));
+  });
+  out.append(el('h3', { text: `MOT history (${o.tests.length})` }), hist);
+}
+$('btn-car-lookup').addEventListener('click', () => lookupCar(true));
+
 // ---------- lost-phone protection ----------
 // Each phone registers itself in the shared space with a one-way verifier of
 // its owner's passphrase. The other phone can then report it lost — only with
@@ -3348,7 +3440,7 @@ function renderLost() {
 
 // ---------- app updates ----------
 // Must match CACHE in sw.js (a test checks this).
-const APP_VERSION = 'evergreen-v53';
+const APP_VERSION = 'evergreen-v54';
 let updateReady = false;
 async function checkForUpdate(manual = false) {
   try {
