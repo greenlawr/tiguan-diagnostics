@@ -2731,11 +2731,18 @@ function fnv(str) { let h = 0x811c9dc5; for (let i = 0; i < str.length; i++) { h
 function mergeCalendar(occs, src, who) {
   const all = sharedItems('event');
   const own = new Map(all.filter((e) => e.src === src).map((e) => [e.id, e]));
-  const others = new Set(all.filter((e) => e.src !== src).map(eventKey));
+  // Your partner's connected calendar wins for events you both have; events that
+  // arrived untagged (morning link / added by hand) are taken over by the calendar,
+  // so they show as yours and stay in step with Google.
+  const others = new Set(all.filter((e) => e.src && e.src !== src).map(eventKey));
+  const untagged = new Map(all.filter((e) => !e.src).map((e) => [eventKey(e), e]));
   const wanted = new Set();
   let changes = 0;
   for (const o of occs) {
-    if (others.has(eventKey(o))) continue; // already there from your partner or added by hand
+    const key = eventKey(o);
+    if (others.has(key)) continue;
+    const old = untagged.get(key);
+    if (old) { sharedRemove(old.id); untagged.delete(key); changes++; }
     const id = 'g' + fnv(src + '|' + o.uid) + o.date.replace(/-/g, '') + (o.time || '').replace(':', '');
     wanted.add(id);
     const prev = own.get(id);
@@ -2837,7 +2844,7 @@ $('cal-hide').addEventListener('input', (e) => persistCalHide(e.target.value));
 
 // ---------- app updates ----------
 // Must match CACHE in sw.js (a test checks this).
-const APP_VERSION = 'evergreen-v45';
+const APP_VERSION = 'evergreen-v46';
 let updateReady = false;
 async function checkForUpdate(manual = false) {
   try {
