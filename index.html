@@ -182,6 +182,22 @@
 
     <!-- Life admin: documents & renewals vault -->
     <section id="tab-life" class="tab">
+      <h3 id="sec-calendar">Family calendar</h3>
+      <div class="card">
+        <p class="muted small">Everything coming up for the family, shared between your phones. Events from Google Calendar arrive with the morning link; you can also add one here.</p>
+        <details class="inner-form" id="cal-form">
+          <summary>Add an event</summary>
+          <label class="field">What<input id="cal-title" type="text" placeholder="e.g. Dentist — Maddy"></label>
+          <div class="grid2">
+            <label class="field">Date<input id="cal-date" type="date"></label>
+            <label class="field">Time (optional)<input id="cal-time" type="time"></label>
+          </div>
+          <label class="field">Where (optional)<input id="cal-where" type="text"></label>
+          <button id="btn-cal-add" class="primary">Add event</button>
+        </details>
+        <div id="cal-list"></div>
+      </div>
+
       <h3 id="sec-deliveries">Deliveries</h3>
       <div class="card">
         <p class="muted small">Add a parcel to see it on your dashboard with a link to the courier's live tracking. Tip: from Amazon or an email, tap Share → My Life to add it quickly.</p>
@@ -502,17 +518,8 @@
 
     <!-- Help -->
     <section id="tab-help" class="tab">
-      <details class="card" open>
-        <summary>Getting started</summary>
-        <p>You need a small Bluetooth adapter that plugs into the car's diagnostic socket. It must say <strong>Bluetooth LE</strong>, <strong>BLE</strong> or <strong>Bluetooth 4.0</strong> on the listing.</p>
-        <ul>
-          <li><strong>OBDLink CX</strong>: the most reliable choice.</li>
-          <li><strong>Vgate iCar Pro BLE 4.0</strong>: a good cheaper option.</li>
-        </ul>
-        <p>The socket is under the dashboard on the driver's side, above the pedals. The adapter only fits one way round. You can leave it plugged in for a check, but unplug it if the car will be parked for days.</p>
-      </details>
-
-      <details class="card" id="import-card">
+      <h3>Settings</h3>
+<details class="card" id="import-card">
         <summary>Quick import (paste to add lots at once)</summary>
         <p class="muted small">Hate typing? Tell Claude your details in a chat (or ask it to read them from your email), paste the block it gives you here, and it adds everything in one go. One item per line, like:</p>
         <pre class="rec-text">subscription: Netflix | 10.99 | monthly
@@ -526,7 +533,7 @@ shopping: milk, bread, eggs</pre>
         <p id="import-status" class="status" role="status"></p>
       </details>
 
-      <details class="card" id="security-card">
+<details class="card" id="security-card">
         <summary>Security &amp; backup</summary>
         <p class="muted">Your data is encrypted on this phone with your passphrase. It never leaves the device. There is no cloud copy, so keep a backup and don't forget your passphrase — it can't be recovered.</p>
         <button id="btn-backup" class="primary">Save encrypted backup</button>
@@ -539,7 +546,7 @@ shopping: milk, bread, eggs</pre>
         <p id="security-status" class="status" role="status"></p>
       </details>
 
-      <details class="card">
+<details class="card">
         <summary>Text size</summary>
         <p class="muted">Make everything bigger if it's hard to read.</p>
         <div class="row" id="text-size" role="group" aria-label="Text size">
@@ -549,7 +556,76 @@ shopping: milk, bread, eggs</pre>
         </div>
       </details>
 
-      <details class="card">
+<details class="card" id="update-card">
+  <summary>App updates</summary>
+  <p class="muted">Evergreen updates itself: when a new version is out, a green bar appears at the top — tap <em>Update now</em>. You'll need to unlock again afterwards.</p>
+  <p id="app-version" class="muted small"></p>
+  <button id="btn-check-update">Check for updates</button>
+</details>
+
+      <h3>How Evergreen works</h3>
+<details class="card">
+  <summary>The basics</summary>
+  <p><strong>Home</strong> shows what needs attention soon, this week's family calendar, and a tile for every area. <strong>Life</strong> holds everything else: calendar, shopping, deliveries, documents, utilities and meters, money, home, health, loyalty cards, and the shared bills and tasks.</p>
+  <p>Everything you add is encrypted on your phone. Dates you add (MOT, renewals, document expiry, check-ups) appear on Home as they get close.</p>
+</details>
+
+<details class="card">
+  <summary>Sharing with your partner</summary>
+  <p>Pair once under <strong>Life → Sharing &amp; sync</strong>: one phone taps <em>Create a shared space</em>, the other taps <em>Join with a code</em> and enters the same code, with the same server address.</p>
+  <p><strong>Shared between you:</strong> the family calendar, shopping list (with photos), deliveries, meter readings, shared bills and shared tasks. <strong>Kept private to each phone:</strong> documents, health, money, loyalty cards, car and everything else.</p>
+  <p>It syncs when you open the app, when you switch back to it, every minute while it's open, and straight after you change something. It can't sync while the app is closed — you'll get the latest the moment you open it.</p>
+  <p>The code is the key to your shared space. Only share it with your partner.</p>
+</details>
+
+<details class="card">
+  <summary>Family calendar &amp; the morning check</summary>
+  <p>Each morning Claude checks your Gmail and Google Calendar and sends you one link. Tap it and new parcels and the next two weeks of events drop straight in — and onto your partner's phone too. Nothing is ever added twice.</p>
+  <p>You can also add an event yourself under <strong>Life → Family calendar</strong>. Past events tidy themselves away.</p>
+</details>
+
+<details class="card">
+  <summary>Deliveries</summary>
+  <p>Parcels arrive with the morning link, or add one under <strong>Life → Deliveries</strong>. Tap <em>Track parcel</em> to open the courier's page, and <em>Arrived</em> when it's here — it disappears from both phones.</p>
+</details>
+
+<details class="card">
+  <summary>Meter readings</summary>
+  <p>Under <strong>Life → Utilities</strong> there's a panel for electricity (kWh), gas (m³) and water (m³). Type the number on the meter and tap Add. After two readings it shows how much you use a day. Either of you can add one.</p>
+</details>
+
+<details class="card">
+  <summary>Photos on the shopping list</summary>
+  <p>Tap 📷 next to any item to take or choose a photo — handy for "this exact brand". Tap the thumbnail to see it full size or remove it. Photos sync to your partner and are deleted when the item is.</p>
+</details>
+
+<details class="card">
+  <summary>Documents &amp; scanning</summary>
+  <p>Under <strong>Life → Documents</strong>, add passports, licences, insurance and so on with their expiry dates to get reminders. You can attach a photo, and scanning a passport fills in the details for you. Photos are encrypted on your phone.</p>
+</details>
+
+<details class="card">
+  <summary>Installing on another phone</summary>
+  <p>Open <strong>greenlawr.github.io/tiguan-diagnostics</strong> in <strong>Safari</strong> (iPhone) or <strong>Chrome</strong> (Android). iPhone: Share → <em>Add to Home Screen</em>. Android: ⋮ → <em>Install app</em>. Always open it from the home-screen icon, then set a passphrase and pair under Sharing &amp; sync.</p>
+</details>
+
+<details class="card">
+  <summary>Your privacy</summary>
+  <p>Your data is encrypted with your passphrase and stays on your phone. The shared items go through your own sync server, which only ever sees scrambled data it can't read. There's no account, and a forgotten passphrase can't be recovered by anyone, so keep a backup.</p>
+</details>
+
+      <h3>Your car</h3>
+<details class="card">
+        <summary>Car check: getting started</summary>
+        <p>You need a small Bluetooth adapter that plugs into the car's diagnostic socket. It must say <strong>Bluetooth LE</strong>, <strong>BLE</strong> or <strong>Bluetooth 4.0</strong> on the listing.</p>
+        <ul>
+          <li><strong>OBDLink CX</strong>: the most reliable choice.</li>
+          <li><strong>Vgate iCar Pro BLE 4.0</strong>: a good cheaper option.</li>
+        </ul>
+        <p>The socket is under the dashboard on the driver's side, above the pedals. The adapter only fits one way round. You can leave it plugged in for a check, but unplug it if the car will be parked for days.</p>
+      </details>
+
+<details class="card">
         <summary>What the colours mean</summary>
         <ul class="legend">
           <li><span class="tag ok">All good</span> Nothing to do.</li>
@@ -560,7 +636,7 @@ shopping: milk, bread, eggs</pre>
         <p>This app gives guidance, not a guarantee. If the car feels unsafe, or a red warning shows on the dashboard, stop and get help regardless of what the app says.</p>
       </details>
 
-      <details class="card">
+<details class="card">
         <summary>Google Maps on the car's screen</summary>
         <p>You do not need this app or the adapter for that. Your Tiguan can show Google Maps from your phone using <strong>Android Auto</strong>, which VW calls <strong>App-Connect</strong>. It is free and always has up-to-date maps and live traffic.</p>
         <ol>
@@ -573,7 +649,7 @@ shopping: milk, bread, eggs</pre>
         <p><strong>Want it without a cable?</strong> Once wired Android Auto works, a small "wireless Android Auto adapter" that plugs into the same USB socket makes it connect automatically.</p>
       </details>
 
-      <details class="card" id="aa-card">
+<details class="card" id="aa-card">
         <summary>Android Auto isn't working — why?</summary>
         <p>This reads your car's touchscreen unit and works out which situation you are in. It cannot switch Android Auto on — that needs a signed activation code for your exact unit that only a dealer or specialist coder can supply — but it tells you whether that is even what you need, so you do not pay for the wrong thing.</p>
         <button id="btn-aa" class="primary" data-needs-conn>Check my car's unit</button>
@@ -581,13 +657,13 @@ shopping: milk, bread, eggs</pre>
         <div id="aa-out"></div>
       </details>
 
-      <details class="card">
+<details class="card">
         <summary>Updating the car's own maps and software</summary>
         <p><strong>Built-in maps.</strong> If your car has the "Discover Media" navigation system, VW has offered map updates as a free download from its website, which you copy onto the car's SD card yourself. Search for "Volkswagen map update Discover Media" on VW's official site for your country before paying anyone.</p>
         <p><strong>The car's computers.</strong> This app shows the software version of each computer in your car (open a system under "Systems checked"). It deliberately cannot change that software: updates are locked to VW's own dealer equipment, and attempting one with a small Bluetooth adapter can permanently break the part. If a dealer says an update is available, the versions shown here let you check it was really applied.</p>
       </details>
 
-      <details class="card">
+<details class="card">
         <summary>Turn off the engine warning light</summary>
         <p>This wipes the engine's stored faults and switches the warning light off. Only do it after a repair, or to see whether a one-off fault comes back.</p>
         <ul>
@@ -599,7 +675,7 @@ shopping: milk, bread, eggs</pre>
         <p id="clear-status" class="status" role="status"></p>
       </details>
 
-      <details class="card">
+<details class="card">
         <summary>Words you might see</summary>
         <dl class="glossary">
           <dt>Fault code</dt><dd>A short reference like P0299 that the car stores when it notices a problem. Garages use these to look up what went wrong.</dd>
@@ -611,7 +687,7 @@ shopping: milk, bread, eggs</pre>
         </dl>
       </details>
 
-      <details class="card" id="tech">
+<details class="card" id="tech">
         <summary>Technical log (for troubleshooting)</summary>
         <p class="muted">The raw conversation with the adapter. If something does not work, copy this and send it to whoever is helping you.</p>
         <div class="row">
@@ -630,6 +706,7 @@ shopping: milk, bread, eggs</pre>
     <button data-tab="help">Help</button>
   </nav>
 
+  <div id="update-banner" class="ios-install update-banner" hidden role="status"><span>A new version is ready</span> <button id="btn-update-now">Update now</button></div>
   <div id="toast" class="toast" hidden></div>
   <div id="photo-viewer" class="photo-viewer" hidden role="dialog" aria-modal="true" aria-label="Photo">
     <div id="photo-viewer-title" class="photo-viewer-title"></div>

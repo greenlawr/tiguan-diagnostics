@@ -406,3 +406,12 @@ button:active:not(:disabled), .btn-a:active { transform: translateY(1px); }
 .meter-add input[type=date] { flex: 0 0 auto; width: 140px; min-width: 0; }
 .meter-add button { width: auto; flex: 0 0 auto; }
 .meter-add input { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; min-height: 48px; }
+
+/* Update banner */
+.update-banner { z-index: 25; display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap; padding: 10px 14px calc(10px); padding-top: calc(10px + env(safe-area-inset-top)); }
+.update-banner[hidden] { display: none; }
+.update-banner button { position: static; transform: none; margin: 0; font-size: 14px; background: #fff; color: var(--accent); border: 0; border-radius: 999px; padding: 6px 14px; min-height: 34px; font-weight: 700; }
+/* Family calendar list */
+.cal-day { font-weight: 700; font-size: 14px; margin: 16px 0 4px; }
+.cal-day:first-child { margin-top: 6px; }
+.cal-day.today { color: var(--accent); }

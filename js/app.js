@@ -1179,16 +1179,18 @@ function welcomeCard() {
 }
 
 const HOME_TILES = [
-  { icon: '🩺', label: 'Car check', go: () => showTab('check') },
-  { icon: '🚗', label: 'My car', go: () => showTab('car') },
+  { icon: '📅', label: 'Calendar', go: () => goLife('calendar'), badge: () => { const n = upcomingEvents(0).length; return n ? { text: n + ' today', cls: 'minor' } : null; } },
   { icon: '🛒', label: 'Shopping list', go: () => goLife('shopping'), badge: () => { const n = Object.values(store.load(SHARED_KEY, {})).filter((i) => !i.deleted && !i.done).length; return n ? { text: String(n), cls: 'minor' } : null; } },
+  { icon: '📦', label: 'Deliveries', go: () => goLife('deliveries'), badge: () => { const n = sharedItems('delivery').filter((d) => !d.done).length; return n ? { text: String(n), cls: 'minor' } : null; } },
   { icon: '📄', label: 'Documents', go: () => goLife('documents'), badge: () => { const soon = store.load(DOCS_KEY, []).filter((d) => d.expiry && countdown(d.expiry, '').days <= 30).length; return soon ? { text: String(soon), cls: 'soon' } : null; } },
   { icon: '⚡', label: 'Utilities', go: () => goLife('utilities'), badge: () => { const soon = store.load(UTIL_KEY, []).filter((u) => u.renewal && countdown(u.renewal, '').days <= 30).length; return soon ? { text: String(soon), cls: 'soon' } : null; } },
   { icon: '💷', label: 'Money & tax', go: () => goLife('tax') },
   { icon: '🏠', label: 'Home', go: () => goLife('home') },
   { icon: '❤️', label: 'Health', go: () => goLife('health') },
-  { icon: '📦', label: 'Deliveries', go: () => goLife('deliveries'), badge: () => { const n = sharedItems('delivery').filter((d) => !d.done).length; return n ? { text: String(n), cls: 'minor' } : null; } },
   { icon: '💳', label: 'Loyalty', go: () => goLife('loyalty') },
+  { icon: '👥', label: 'Sharing', go: () => goLife('sharing') },
+  { icon: '🩺', label: 'Car check', go: () => showTab('check') },
+  { icon: '🚗', label: 'My car', go: () => showTab('car') },
   { icon: '⛽', label: 'Trips', go: () => showTab('trips') },
   { icon: '⚙️', label: 'Settings', go: () => showTab('help') },
 ];
@@ -1246,6 +1248,31 @@ function dayLabel(isoDate) {
   if (diff === 1) return 'Tomorrow';
   return d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short' });
 }
+function renderCalendar() {
+  const out = $('cal-list');
+  if (!out) return;
+  pruneEvents();
+  out.replaceChildren();
+  const rows = upcomingEvents(60);
+  if (!rows.length) { out.append(el('p', { class: 'muted small', text: 'Nothing coming up yet. Tap the morning link, or add an event above.' })); return; }
+  let lastDay = null;
+  let ul = null;
+  for (const e of rows) {
+    if (e.date !== lastDay) { const label = dayLabel(e.date); ul = el('ul', { class: 'list' }); out.append(el('div', { class: 'cal-day' + (label === 'Today' ? ' today' : ''), text: label }), ul); lastDay = e.date; }
+    const when = /^\d/.test((e.time || '').trim()) ? e.time.trim() : 'All day';
+    ul.append(deletableRow(`${when} · ${e.title || 'Event'}`, e.where || '', () => { sharedRemove(e.id); renderCalendar(); renderHome(); scheduleSync(); }));
+  }
+}
+$('cal-date').value = todayISO();
+$('btn-cal-add').addEventListener('click', () => {
+  const title = $('cal-title').value.trim();
+  if (!title) { $('cal-title').focus(); return toast('Give the event a name.'); }
+  sharedAdd('event', { title, date: $('cal-date').value || todayISO(), time: $('cal-time').value || '', where: $('cal-where').value.trim() });
+  for (const id of ['cal-title', 'cal-time', 'cal-where']) $(id).value = '';
+  renderCalendar(); renderHome(); scheduleSync(); haptic();
+  toast('Event added ✓');
+});
+
 function renderAgenda(out) {
   pruneEvents();
   const rows = upcomingEvents(7);
@@ -1638,7 +1665,7 @@ const METERS = [
   { kind: 'Water', unit: 'm³', icon: 'drop' },
 ];
 const fmtNum = (n) => Number(n).toLocaleString('en-GB', { maximumFractionDigits: 2 });
-const todayISO = () => { const d = new Date(); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10); };
+function todayISO() { const d = new Date(); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10); }
 function renderMeters() {
   const box = $('meters');
   if (!box) return;
@@ -1969,7 +1996,7 @@ function peopleOptions(sel, includeAnyone) {
   for (const n of [myName(), partnerName()]) sel.add(new Option(n, n));
   if (keep) sel.value = keep;
 }
-function renderSharedAll() { renderShared(); renderBills(); renderTasks(); renderDeliveries(); renderMeters(); renderHome(); }
+function renderSharedAll() { renderShared(); renderBills(); renderTasks(); renderDeliveries(); renderMeters(); renderCalendar(); renderHome(); }
 
 // Shared bills with who-owes-whom
 function renderBills() {
@@ -2510,6 +2537,35 @@ function handleLaunchParams() {
   }
 }
 
+// ---------- app updates ----------
+// Must match CACHE in sw.js (a test checks this).
+const APP_VERSION = 'evergreen-v40';
+let updateReady = false;
+async function checkForUpdate(manual = false) {
+  try {
+    const txt = await (await fetch('sw.js', { cache: 'no-store' })).text();
+    const live = (txt.match(/evergreen-v\d+/) || [])[0];
+    if (live && live !== APP_VERSION) {
+      updateReady = true;
+      $('update-banner').hidden = false;
+      return true;
+    }
+    if (manual) toast("You're on the latest version ✓");
+  } catch {
+    if (manual) toast('Could not check — are you online?');
+  }
+  return false;
+}
+$('btn-update-now').addEventListener('click', async () => {
+  $('btn-update-now').disabled = true;
+  try { const reg = await navigator.serviceWorker?.getRegistration(); await reg?.update(); } catch { /* reload anyway */ }
+  location.reload();
+});
+$('btn-check-update').addEventListener('click', () => checkForUpdate(true));
+$('app-version').textContent = 'You have version ' + APP_VERSION.split('-v')[1] + '.';
+document.addEventListener('visibilitychange', () => { if (!document.hidden && !updateReady) checkForUpdate(); });
+setInterval(() => { if (!document.hidden && !updateReady) checkForUpdate(); }, 30 * 60 * 1000);
+
 // ---------- startup ----------
 async function migratePhotos() {
   if (!mediaKey) return;
@@ -2547,6 +2603,7 @@ async function initAll() {
   initCarTab();
   renderDocs();
   renderDeliveries();
+  renderCalendar();
   initLifeSections();
   renderHome();
   $('conn').style.display = 'none'; // Home is the default screen
@@ -2558,6 +2615,7 @@ async function initAll() {
     refreshReconnect();
   }
   handleLaunchParams();
+  checkForUpdate();
 }
 
 try {
