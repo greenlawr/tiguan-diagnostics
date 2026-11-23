@@ -2756,7 +2756,13 @@ function pullCalendar(manual = false) {
     try {
       const hid = await householdId(s.householdCode);
       const res = await fetch(`${s.syncUrl.replace(/\/+$/, '')}/cal?h=${hid}&url=${encodeURIComponent(s.icsUrl)}`, { cache: 'no-store' });
-      if (!res.ok) { let msg = ''; try { msg = (await res.json()).error; } catch { /* not json */ } throw new Error(msg || `the server returned ${res.status}`); }
+      if (!res.ok) {
+        let msg = '';
+        try { msg = (await res.json()).error; } catch { /* not json */ }
+        // The old sync server code has no calendar route and answers "bad id".
+        if (msg === 'bad id') msg = 'your sync server needs updating — paste the latest worker code into Cloudflare (Help → Sharing with your partner)';
+        throw new Error(msg || `the server returned ${res.status}`);
+      }
       const text = await res.text();
       if (!/BEGIN:VCALENDAR/.test(text)) throw new Error("that link didn't return a calendar");
       const hide = (settings().calHide || '').split(',').map((w) => w.trim().toLowerCase()).filter(Boolean);
@@ -2830,7 +2836,7 @@ $('cal-hide').addEventListener('input', (e) => persistCalHide(e.target.value));
 
 // ---------- app updates ----------
 // Must match CACHE in sw.js (a test checks this).
-const APP_VERSION = 'evergreen-v43';
+const APP_VERSION = 'evergreen-v44';
 let updateReady = false;
 async function checkForUpdate(manual = false) {
   try {
