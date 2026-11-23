@@ -9,7 +9,7 @@ import { runHealthCheck, reportText, stateText, diffReports } from './report.js'
 import { diagnoseAppConnect, dealerSummary, CHECKLIST } from './appconnect.js';
 import { Trip, fuelRateFrom5E, fuelRateFromMaf, mpgUk } from './trip.js';
 import { calendarUrl, calendarEvent, cleanReg, GOV_MOT_HISTORY, GOV_TAX_CHECK } from './vehicle.js';
-import { takeHome, dividendTax, taxDeadlines, subscriptionsTotal, nextDue, meterUsage } from './life.js';
+import { takeHome, dividendTax, taxDeadlines, subscriptionsTotal, nextDue, meterUsage, moneyOverview } from './life.js';
 import { fuelStats, renewals, countdown, upcomingReminders, parkMapsUrl, timeAgo, mileageSummary, mileageExport } from './garage.js';
 import { Vault } from './vault.js';
 import { CARRIER_NAMES, trackingUrl, parcelStatus, parseShared } from './deliveries.js';
@@ -1391,6 +1391,7 @@ function renderUtilities() {
     list.append(row);
   }
   if (!items.length) list.append(el('li', { class: 'muted small', text: 'No plans added.' }));
+  renderMoneyOverview();
 }
 // Estimate the cheapest monthly figure mentioned in a recommendation.
 function parseBestMonthly(text) {
@@ -1454,6 +1455,7 @@ function renderSubs() {
       deleteItem(SUBS_KEY, s.id, () => { renderSubs(); renderDashboard(); }, { label: s.name });
     }));
   }
+  renderMoneyOverview();
 }
 $('btn-subs-add').addEventListener('click', () => {
   const name = $('subs-name').value.trim();
@@ -1463,6 +1465,43 @@ $('btn-subs-add').addEventListener('click', () => {
   for (const id of ['subs-name', 'subs-cost', 'subs-renewal']) $(id).value = '';
   renderSubs(); renderDashboard(); toast('Subscription added ✓');
 });
+
+// Money overview — all recurring outgoings in one place
+const CAT_COLOR = { Subscriptions: 'var(--accent)', Utilities: 'var(--soon)' };
+function renderMoneyOverview() {
+  const out = $('money-overview');
+  if (!out) return;
+  const m = moneyOverview(store.load(SUBS_KEY, []), store.load(UTIL_KEY, []));
+  out.replaceChildren(el('h2', { text: 'Your outgoings' }));
+  if (!m.items.length) {
+    out.append(el('p', { class: 'muted small', text: 'Add your subscriptions and utility plans and your monthly spend appears here.' }));
+    return;
+  }
+  out.append(el('div', { class: 'grid' },
+    el('div', { class: 'tile' }, el('div', { class: 'label', text: 'Every month' }), el('div', { class: 'value' }, el('span', { text: money(m.monthly) }))),
+    el('div', { class: 'tile' }, el('div', { class: 'label', text: 'Every year' }), el('div', { class: 'value' }, el('span', { text: money(m.yearly) })))
+  ));
+  // category breakdown bars
+  const bars = el('div', { style: 'margin-top:14px' });
+  for (const c of m.categories) {
+    const pct = Math.round((c.monthly / m.monthly) * 100);
+    bars.append(el('div', { style: 'margin-bottom:8px' },
+      el('div', { class: 'line', style: 'margin-bottom:4px' }, el('span', { class: 'sub', text: c.label }), el('span', { class: 'sub', text: `${money(c.monthly)}/mo · ${pct}%` })),
+      el('div', { class: 'bar' }, el('div', { class: 'bar-fill', style: `width:${pct}%;background:${CAT_COLOR[c.label] || 'var(--accent)'}` }))
+    ));
+  }
+  out.append(bars);
+  if (m.savings > 0) {
+    out.append(el('p', { class: 'state-note', style: 'margin-top:12px' },
+      el('span', { class: 'tag ok', text: `Could save ~${money(m.savings)}/mo` }), el('span', { text: '  from the options saved against your utilities.' })));
+  }
+  // biggest items
+  const list = el('ul', { class: 'list', style: 'margin-top:10px' });
+  for (const i of m.items.slice(0, 6)) {
+    list.append(el('li', {}, el('div', { class: 'line' }, el('div', {}, el('div', { class: 'name', text: i.name }), el('div', { class: 'sub', text: i.cat })), el('span', { class: 'name', text: money(i.monthly) + '/mo' }))));
+  }
+  out.append(el('details', { class: 'inner' }, el('summary', { text: 'Where it goes' }), list));
+}
 
 // Tax
 function renderTaxDates() {
