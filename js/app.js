@@ -1163,7 +1163,7 @@ function greeting() {
 function isAppEmpty() {
   const v = loadVehicle();
   const anyList = [DOCS_KEY, SUBS_KEY, LOYAL_KEY, MAINT_KEY, CHECK_KEY, INV_KEY].some((k) => store.load(k, []).length);
-  const anyShopping = Object.values(store.load(SHARED_KEY, {})).some((i) => !i.deleted);
+  const anyShopping = Object.values(store.load(SHARED_KEY, {})).some((i) => !i.deleted); // anything shared counts as 'not empty'
   return !anyList && !anyShopping && !v.reg && !v.mot;
 }
 function welcomeCard() {
@@ -1182,7 +1182,8 @@ function welcomeCard() {
 
 const HOME_TILES = [
   { icon: '📅', label: 'Calendar', go: () => goLife('calendar'), badge: () => { const n = upcomingEvents(0).length; return n ? { text: n + ' today', cls: 'minor' } : null; } },
-  { icon: '🛒', label: 'Shopping list', go: () => goLife('shopping'), badge: () => { const n = Object.values(store.load(SHARED_KEY, {})).filter((i) => !i.deleted && !i.done).length; return n ? { text: String(n), cls: 'minor' } : null; } },
+  { icon: '🛒', label: 'Shopping list', go: () => goLife('shopping'), badge: () => { const n = sharedItems('shop').filter((i) => !i.done).length; return n ? { text: String(n), cls: 'minor' } : null; } },
+  { icon: '✅', label: 'To-do list', go: () => goLife('tasks'), badge: () => { const n = sharedItems('task').filter((i) => !i.done).length; return n ? { text: String(n), cls: 'minor' } : null; } },
   { icon: '📦', label: 'Deliveries', go: () => goLife('deliveries'), badge: () => { const n = sharedItems('delivery').filter((d) => !d.done).length; return n ? { text: String(n), cls: 'minor' } : null; } },
   { icon: '📄', label: 'Documents', go: () => goLife('documents'), badge: () => { const soon = store.load(DOCS_KEY, []).filter((d) => d.expiry && countdown(d.expiry, '').days <= 30).length; return soon ? { text: String(soon), cls: 'soon' } : null; } },
   { icon: '⚡', label: 'Utilities', go: () => goLife('utilities'), badge: () => { const soon = utilities().filter((u) => u.renewal && countdown(u.renewal, '').days <= 30).length; return soon ? { text: String(soon), cls: 'soon' } : null; } },
@@ -1190,7 +1191,6 @@ const HOME_TILES = [
   { icon: '🏠', label: 'Home', go: () => goLife('home') },
   { icon: '❤️', label: 'Health', go: () => goLife('health') },
   { icon: '💳', label: 'Loyalty', go: () => goLife('loyalty') },
-  { icon: '👥', label: 'Sharing', go: () => goLife('sharing') },
   { icon: '🩺', label: 'Car check', go: () => showTab('check') },
   { icon: '🚗', label: 'My car', go: () => showTab('car') },
   { icon: '⛽', label: 'Trips', go: () => showTab('trips') },
@@ -2844,7 +2844,7 @@ $('cal-hide').addEventListener('input', (e) => persistCalHide(e.target.value));
 
 // ---------- app updates ----------
 // Must match CACHE in sw.js (a test checks this).
-const APP_VERSION = 'evergreen-v46';
+const APP_VERSION = 'evergreen-v47';
 let updateReady = false;
 async function checkForUpdate(manual = false) {
   try {

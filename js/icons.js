@@ -119,7 +119,7 @@ export const TILE_ICON = {
   'Car check': 'gauge', 'My car': 'car', 'Shopping list': 'cart', 'Documents': 'doc',
   'Utilities': 'bolt', 'Money & tax': 'money', 'Home': 'house', 'Health': 'heart',
   'Deliveries': 'box', 'Loyalty': 'card', 'Trips': 'fuel', 'Settings': 'gear',
-  'Calendar': 'calendar', 'Sharing': 'share',
+  'Calendar': 'calendar', 'Sharing': 'share', 'To-do list': 'tasks',
 };
 export const SEC_ICON_NAME = {
   deliveries: 'box', documents: 'doc', utilities: 'bolt', subscriptions: 'refresh',
