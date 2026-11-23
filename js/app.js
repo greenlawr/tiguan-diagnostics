@@ -16,6 +16,7 @@ import { CARRIER_NAMES, trackingUrl, parcelStatus, parseShared } from './deliver
 import { biometricAvailable, biometricConfigured, enableBiometric, unlockBiometric, disableBiometric } from './biometric.js';
 import { generateHouseholdCode, normalizeCode } from './household.js';
 import { syncShared } from './sync.js';
+import { savePhoto, loadPhoto, deletePhoto, exportAllPhotos, importAllPhotos } from './photos.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -49,6 +50,7 @@ const debounce = (fn, ms = 500) => {
 // Encrypted on-device store. Every collection below lives inside the vault, so
 // it is only readable after the user unlocks with their passphrase.
 const vault = new Vault();
+let mediaKey = null; // stable key for encrypting photos in IndexedDB
 const store = {
   load(key, fallback) {
     return vault.get(key, fallback);
@@ -1194,14 +1196,11 @@ function renderDocs() {
       cd ? el('span', { class: 'tag ' + cd.level, text: cd.text.replace(d.label + ' ', '') }) : el('span', { class: 'tag dim', text: 'No date' })
     );
     const card = el('div', { class: 'card doc' }, head);
-    if (d.photo) {
-      const img = el('img', { class: 'doc-photo', src: d.photo, alt: d.label });
-      img.addEventListener('click', () => window.open(d.photo, '_blank'));
-      card.append(img);
-    }
+    attachPhoto(card, d, d.label);
     const del = el('button', { class: 'link del-wide', text: 'Delete' });
     del.addEventListener('click', () => {
       if (!confirm(`Delete "${d.label}"?`)) return;
+      if (d.photoId) deletePhoto(d.photoId);
       store.save(DOCS_KEY, store.load(DOCS_KEY, []).filter((x) => x.id !== d.id));
       renderDocs();
     });
@@ -1209,6 +1208,21 @@ function renderDocs() {
     out.append(card);
   }
   renderDashboard();
+}
+
+// Show an item's photo: legacy inline (pre-migration) or encrypted from IndexedDB.
+function attachPhoto(card, item, alt) {
+  if (item.photo) {
+    const img = el('img', { class: 'doc-photo', src: item.photo, alt });
+    img.addEventListener('click', () => window.open(item.photo, '_blank'));
+    card.append(img);
+  } else if (item.photoId && mediaKey) {
+    const img = el('img', { class: 'doc-photo', alt });
+    card.append(img);
+    loadPhoto(item.photoId, mediaKey).then((url) => {
+      if (url) { img.src = url; img.addEventListener('click', () => window.open(url, '_blank')); } else img.remove();
+    });
+  }
 }
 
 $('btn-doc-add').addEventListener('click', async () => {
@@ -1220,21 +1234,13 @@ $('btn-doc-add').addEventListener('click', async () => {
   const btn = $('btn-doc-add');
   btn.disabled = true;
   try {
-    let photo = null;
+    const entry = { id: Date.now(), label, category: $('doc-category').value, expiry: $('doc-expiry').value, note: $('doc-note').value.trim() };
     const file = $('doc-photo').files[0];
-    if (file) photo = await compressImage(file);
-    const entry = { id: Date.now(), label, category: $('doc-category').value, expiry: $('doc-expiry').value, note: $('doc-note').value.trim(), photo };
-    try {
-      store.save(DOCS_KEY, [entry, ...store.load(DOCS_KEY, [])]);
-    } catch {
-      alert('Could not save — this phone may be low on storage. Try without a photo.');
-      return;
+    if (file && mediaKey) {
+      entry.photoId = 'p' + Date.now() + Math.random().toString(36).slice(2, 6);
+      await savePhoto(entry.photoId, await compressImage(file), mediaKey);
     }
-    // localStorage.setItem can throw inside store.save (which swallows it); verify it saved.
-    if (!store.load(DOCS_KEY, []).some((x) => x.id === entry.id)) {
-      alert('Could not save the photo — storage may be full. Try a smaller photo or none.');
-      return;
-    }
+    store.save(DOCS_KEY, [entry, ...store.load(DOCS_KEY, [])]);
     for (const id of ['doc-label', 'doc-note', 'doc-expiry', 'doc-photo']) $(id).value = '';
     $('doc-form').open = false;
     renderDocs();
@@ -1424,9 +1430,9 @@ function renderInventory() {
   for (const it of items) {
     const sub = [it.room, it.value ? money(it.value) : null, it.serial ? 'S/N ' + it.serial : null].filter(Boolean).join(' · ');
     const card = el('div', { class: 'card doc' }, el('div', { class: 'line' }, el('div', {}, el('div', { class: 'name', text: it.name }), el('div', { class: 'sub', text: sub })), null));
-    if (it.photo) { const img = el('img', { class: 'doc-photo', src: it.photo, alt: it.name }); img.addEventListener('click', () => window.open(it.photo, '_blank')); card.append(img); }
+    attachPhoto(card, it, it.name);
     const del = el('button', { class: 'link del-wide', text: 'Delete' });
-    del.addEventListener('click', () => { store.save(INV_KEY, items.filter((x) => x.id !== it.id)); renderInventory(); });
+    del.addEventListener('click', () => { if (it.photoId) deletePhoto(it.photoId); store.save(INV_KEY, items.filter((x) => x.id !== it.id)); renderInventory(); });
     card.append(del);
     list.append(card);
   }
@@ -1436,12 +1442,13 @@ $('btn-inv-add').addEventListener('click', async () => {
   if (!name) return alert('Please name the item.');
   const btn = $('btn-inv-add'); btn.disabled = true;
   try {
-    let photo = null;
+    const entry = { id: Date.now(), name, room: $('inv-room').value.trim(), value: parseFloat($('inv-value').value) || 0, serial: $('inv-serial').value.trim() };
     const file = $('inv-photo').files[0];
-    if (file) photo = await compressImage(file);
-    const entry = { id: Date.now(), name, room: $('inv-room').value.trim(), value: parseFloat($('inv-value').value) || 0, serial: $('inv-serial').value.trim(), photo };
+    if (file && mediaKey) {
+      entry.photoId = 'p' + Date.now() + Math.random().toString(36).slice(2, 6);
+      await savePhoto(entry.photoId, await compressImage(file), mediaKey);
+    }
     store.save(INV_KEY, [entry, ...store.load(INV_KEY, [])]);
-    if (!store.load(INV_KEY, []).some((x) => x.id === entry.id)) return alert('Could not save — storage may be full. Try without a photo.');
     for (const id of ['inv-name', 'inv-room', 'inv-value', 'inv-serial', 'inv-photo']) $(id).value = '';
     renderInventory();
   } finally { btn.disabled = false; }
@@ -1868,6 +1875,7 @@ async function onUnlockSubmit(e) {
 
 function lockApp() {
   vault.lock();
+  mediaKey = null;
   stopLive();
   stopTrip(false);
   if (elm) {
@@ -1890,16 +1898,18 @@ $('lock-reset').addEventListener('click', () => {
 
 // Security card actions
 $('btn-lock2').addEventListener('click', lockApp);
-$('btn-backup').addEventListener('click', () => {
-  const blob = vault.backupBlob();
-  if (!blob) return;
-  const url = URL.createObjectURL(new Blob([JSON.stringify(blob)], { type: 'application/json' }));
+$('btn-backup').addEventListener('click', async () => {
+  const vaultBlob = vault.backupBlob();
+  if (!vaultBlob) return;
+  setStatus('security-status', 'Preparing backup…');
+  const bundle = { app: 'evergreen-backup', v: 1, vault: vaultBlob, photos: await exportAllPhotos().catch(() => ({})) };
+  const url = URL.createObjectURL(new Blob([JSON.stringify(bundle)], { type: 'application/json' }));
   const a = document.createElement('a');
   a.href = url;
-  a.download = `my-life-backup-${new Date().toISOString().slice(0, 10)}.json`;
+  a.download = `evergreen-backup-${new Date().toISOString().slice(0, 10)}.json`;
   a.click();
   URL.revokeObjectURL(url);
-  setStatus('security-status', 'Backup saved. Keep it somewhere safe — it needs your passphrase to open.');
+  setStatus('security-status', 'Backup saved (including photos). Keep it safe — it needs your passphrase to open.');
 });
 $('btn-restore').addEventListener('click', () => $('restore-file').click());
 $('restore-file').addEventListener('change', async (e) => {
@@ -1908,8 +1918,10 @@ $('restore-file').addEventListener('change', async (e) => {
   const pass = prompt('Enter the passphrase for that backup:');
   if (!pass) return;
   try {
-    const blob = JSON.parse(await file.text());
-    await vault.restore(blob, pass);
+    const parsed = JSON.parse(await file.text());
+    const vaultBlob = parsed.app === 'evergreen-backup' ? parsed.vault : parsed; // new bundle or legacy raw blob
+    await vault.restore(vaultBlob, pass);
+    if (parsed.app === 'evergreen-backup' && parsed.photos) await importAllPhotos(parsed.photos);
     initAll();
     setStatus('security-status', 'Backup restored.');
   } catch {
@@ -1989,7 +2001,35 @@ function handleLaunchParams() {
 }
 
 // ---------- startup ----------
-function initAll() {
+async function migratePhotos() {
+  if (!mediaKey) return;
+  for (const key of [DOCS_KEY, INV_KEY]) {
+    const items = store.load(key, []);
+    let changed = false;
+    for (const it of items) {
+      if (it.photo && !it.photoId) {
+        try {
+          const id = 'p' + Date.now() + Math.random().toString(36).slice(2, 6);
+          await savePhoto(id, it.photo, mediaKey);
+          it.photoId = id;
+          delete it.photo;
+          changed = true;
+        } catch {
+          /* leave the photo inline if migration fails */
+        }
+      }
+    }
+    if (changed) store.save(key, items);
+  }
+}
+
+async function initAll() {
+  try {
+    mediaKey = await vault.mediaKey();
+    await migratePhotos();
+  } catch (e) {
+    log('info', 'Media key/migrate: ' + e.message);
+  }
   setConnected(false);
   renderHistory();
   renderTrips();

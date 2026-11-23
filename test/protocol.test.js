@@ -590,3 +590,16 @@ test('parseMRZ tolerates noise and missing data', () => {
   assert.equal(parseMRZ('nothing useful here'), null);
   assert.equal(parseMRZ(''), null);
 });
+
+// ---------- encrypted photo storage ----------
+import { encryptPhoto, decryptPhoto } from '../js/photos.js';
+import { webcrypto as wc2 } from 'node:crypto';
+
+test('photos encrypt/decrypt round-trip and reject wrong key', async () => {
+  const key = await wc2.subtle.generateKey({ name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt']);
+  const dataUrl = 'data:image/jpeg;base64,/9j/EXAMPLE+IMAGE==';
+  const blob = await encryptPhoto(dataUrl, key);
+  assert.equal(await decryptPhoto(blob, key), dataUrl);
+  const other = await wc2.subtle.generateKey({ name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt']);
+  await assert.rejects(decryptPhoto(blob, other));
+});

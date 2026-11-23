@@ -122,6 +122,20 @@ export class Vault {
     return collection in this.data ? this.data[collection] : fallback;
   }
 
+  /**
+   * A stable AES key for encrypting large media (photos) stored outside the
+   * vault blob. It lives inside the vault data, so it is protected by the
+   * passphrase and survives passphrase changes and backup/restore.
+   */
+  async mediaKey() {
+    if (this.locked) throw new Error('Vault is locked.');
+    if (!this.data._mediaKey) {
+      this.data._mediaKey = toB64(crypto.getRandomValues(new Uint8Array(32)));
+      await this._persist();
+    }
+    return crypto.subtle.importKey('raw', fromB64(this.data._mediaKey), { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']);
+  }
+
   async set(collection, value) {
     if (this.locked) throw new Error('Vault is locked.');
     this.data[collection] = value;
