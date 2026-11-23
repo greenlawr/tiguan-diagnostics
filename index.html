@@ -204,6 +204,137 @@
         </details>
       </div>
       <div id="docs-out"></div>
+
+      <h3>Utilities</h3>
+      <div class="card">
+        <p class="muted small">Store your plans so you get a nudge before each renewal — that's when switching saves the most.</p>
+        <details class="inner-form" id="util-form">
+          <summary>Add a plan</summary>
+          <label class="field">Type
+            <select id="util-type"><option>Energy</option><option>Broadband</option><option>Mobile</option><option>Water</option><option>TV / streaming</option><option>Insurance</option><option>Other</option></select>
+          </label>
+          <label class="field">Provider<input id="util-provider" type="text" placeholder="e.g. Octopus"></label>
+          <div class="grid2">
+            <label class="field">Monthly cost (£)<input id="util-cost" type="number" inputmode="decimal" placeholder="optional"></label>
+            <label class="field">Renewal date<input id="util-renewal" type="date"></label>
+          </div>
+          <button id="btn-util-add" class="primary">Add plan</button>
+        </details>
+        <ul id="util-list" class="list"></ul>
+      </div>
+
+      <h3>Subscriptions</h3>
+      <div class="card">
+        <div id="subs-total" class="grid"></div>
+        <details class="inner-form" id="subs-form">
+          <summary>Add a subscription</summary>
+          <label class="field">Name<input id="subs-name" type="text" placeholder="e.g. Netflix"></label>
+          <div class="grid2">
+            <label class="field">Cost (£)<input id="subs-cost" type="number" inputmode="decimal" placeholder="e.g. 10.99"></label>
+            <label class="field">Billing<select id="subs-cycle"><option value="monthly">Monthly</option><option value="yearly">Yearly</option><option value="weekly">Weekly</option></select></label>
+          </div>
+          <label class="field">Renews on (optional)<input id="subs-renewal" type="date"></label>
+          <button id="btn-subs-add" class="primary">Add subscription</button>
+        </details>
+        <ul id="subs-list" class="list"></ul>
+      </div>
+
+      <h3>Tax &amp; money</h3>
+      <div class="card">
+        <h2>Key dates</h2>
+        <ul id="tax-dates" class="list"></ul>
+      </div>
+      <div class="card">
+        <h2>Quick estimates</h2>
+        <p class="muted small">Rough guides for England, 2025/26. Not tax advice.</p>
+        <label class="field">Salary (£/year)<input id="tax-salary" type="number" inputmode="numeric" placeholder="e.g. 45000"></label>
+        <div id="tax-salary-out" class="grid"></div>
+        <label class="field" style="margin-top:12px">Dividends on top (£)<input id="tax-div" type="number" inputmode="numeric" placeholder="e.g. 20000"></label>
+        <div id="tax-div-out" class="status"></div>
+      </div>
+      <div class="card">
+        <h2>Allowances this year</h2>
+        <label class="field">ISA used so far (£, of £20,000)<input id="isa-used" type="number" inputmode="numeric" placeholder="0"></label>
+        <div id="isa-bar" class="status"></div>
+        <label class="field" style="margin-top:12px">Pension paid in (£, of £60,000)<input id="pension-used" type="number" inputmode="numeric" placeholder="0"></label>
+        <div id="pension-bar" class="status"></div>
+      </div>
+
+      <h3>Home</h3>
+      <div class="card">
+        <h2>Contents inventory</h2>
+        <p class="muted small">A record of valuables for an insurance claim. Serial numbers and photos make claims far easier.</p>
+        <div id="inv-total" class="status"></div>
+        <details class="inner-form" id="inv-form">
+          <summary>Add an item</summary>
+          <label class="field">Item<input id="inv-name" type="text" placeholder="e.g. MacBook Pro"></label>
+          <div class="grid2">
+            <label class="field">Room<input id="inv-room" type="text" placeholder="e.g. Study"></label>
+            <label class="field">Value (£)<input id="inv-value" type="number" inputmode="numeric" placeholder="optional"></label>
+          </div>
+          <label class="field">Serial number<input id="inv-serial" type="text" placeholder="optional"></label>
+          <label class="field">Photo<input id="inv-photo" type="file" accept="image/*"></label>
+          <button id="btn-inv-add" class="primary">Add item</button>
+        </details>
+        <ul id="inv-list" class="list"></ul>
+      </div>
+      <div class="card">
+        <h2>Meter readings</h2>
+        <details class="inner-form" id="meter-form">
+          <summary>Add a reading</summary>
+          <div class="grid2">
+            <label class="field">Type<select id="meter-type"><option>Electricity</option><option>Gas</option><option>Water</option></select></label>
+            <label class="field">Date<input id="meter-date" type="date"></label>
+          </div>
+          <label class="field">Reading<input id="meter-reading" type="number" inputmode="decimal" placeholder="meter value"></label>
+          <button id="btn-meter-add" class="primary">Add reading</button>
+        </details>
+        <div id="meter-usage" class="status"></div>
+        <ul id="meter-list" class="list"></ul>
+      </div>
+      <div class="card">
+        <h2>Maintenance reminders</h2>
+        <details class="inner-form" id="maint-form">
+          <summary>Add a reminder</summary>
+          <label class="field">Task<input id="maint-task" type="text" placeholder="e.g. Boiler service"></label>
+          <label class="field">Next due<input id="maint-date" type="date"></label>
+          <button id="btn-maint-add" class="primary">Add</button>
+        </details>
+        <ul id="maint-list" class="list"></ul>
+      </div>
+
+      <h3>Health</h3>
+      <div class="card">
+        <h2>Check-ups</h2>
+        <p class="muted small">Enter when you last went and how often; it works out when you're next due.</p>
+        <details class="inner-form" id="check-form">
+          <summary>Add a check-up</summary>
+          <label class="field">Type<input id="check-type" type="text" placeholder="e.g. Dentist"></label>
+          <div class="grid2">
+            <label class="field">Last visit<input id="check-last" type="date"></label>
+            <label class="field">Every (months)<input id="check-interval" type="number" inputmode="numeric" placeholder="e.g. 6"></label>
+          </div>
+          <button id="btn-check-add" class="primary">Add</button>
+        </details>
+        <ul id="check-list" class="list"></ul>
+      </div>
+      <div class="card">
+        <h2>Emergency card</h2>
+        <p class="muted small">Key info in one place. Stored encrypted like everything else.</p>
+        <div class="grid2">
+          <label class="field">Blood type<input id="emg-blood" type="text" placeholder="e.g. O+"></label>
+          <label class="field">NHS number<input id="emg-nhs" type="text"></label>
+        </div>
+        <label class="field">Allergies<input id="emg-allergies" type="text"></label>
+        <label class="field">Medications<input id="emg-meds" type="text"></label>
+        <label class="field">Emergency contact<input id="emg-contact" type="text" placeholder="name &amp; number"></label>
+      </div>
+
+      <h3>Sharing</h3>
+      <div class="card">
+        <p class="muted small">Add a partner's email to turn reminders into calendar invites you both get.</p>
+        <label class="field">Partner's email<input id="partner-email" type="email" autocapitalize="off" placeholder="e.g. jess@example.com"></label>
+      </div>
     </section>
 
     <!-- Trips -->

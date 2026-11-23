@@ -8,7 +8,8 @@ import { LEVEL_LABEL, priceSearchUrl } from './explain.js';
 import { runHealthCheck, reportText, stateText, diffReports } from './report.js';
 import { diagnoseAppConnect, dealerSummary, CHECKLIST } from './appconnect.js';
 import { Trip, fuelRateFrom5E, fuelRateFromMaf, mpgUk } from './trip.js';
-import { calendarUrl, cleanReg, GOV_MOT_HISTORY, GOV_TAX_CHECK } from './vehicle.js';
+import { calendarUrl, calendarEvent, cleanReg, GOV_MOT_HISTORY, GOV_TAX_CHECK } from './vehicle.js';
+import { takeHome, dividendTax, taxDeadlines, subscriptionsTotal, nextDue, meterUsage } from './life.js';
 import { fuelStats, renewals, countdown, upcomingReminders, parkMapsUrl, timeAgo, mileageSummary, mileageExport } from './garage.js';
 import { Vault } from './vault.js';
 import { CARRIER_NAMES, trackingUrl, parcelStatus, parseShared } from './deliveries.js';
@@ -732,7 +733,7 @@ function refreshRenewals() {
   }
   $('lnk-mot').href = GOV_MOT_HISTORY;
   $('lnk-tax').href = GOV_TAX_CHECK;
-  const cal = v.mot ? calendarUrl(v.reg, v.mot) : null;
+  const cal = v.mot ? calendarUrl(v.reg, v.mot, partnerEmail()) : null;
   $('lnk-cal').hidden = !cal;
   if (cal) $('lnk-cal').href = cal;
   renderDashboard();
@@ -1001,6 +1002,7 @@ function renderDashboard() {
     if (s.days == null) continue;
     items.push({ label: d.item || 'Parcel', sub: 'Delivery', days: s.days, level: s.level === 'dim' ? 'ok' : s.level, text: s.text });
   }
+  items.push(...collectExtraReminders());
   items.sort((a, b) => a.days - b.days);
   const pressing = items.filter((i) => i.level === 'urgent' || i.level === 'soon').length;
   const summary = !items.length
@@ -1091,6 +1093,255 @@ $('btn-doc-add').addEventListener('click', async () => {
     btn.disabled = false;
   }
 });
+
+// ---------- life sections: utilities, subscriptions, tax, home, health, sharing ----------
+const UTIL_KEY = 'tiguan-utilities';
+const SUBS_KEY = 'tiguan-subscriptions';
+const INV_KEY = 'tiguan-inventory';
+const METER_KEY = 'tiguan-meters';
+const MAINT_KEY = 'tiguan-maintenance';
+const CHECK_KEY = 'tiguan-checkups';
+const MONEY_KEY = 'tiguan-money';
+const EMG_KEY = 'tiguan-emergency';
+const SETTINGS_KEY = 'tiguan-settings';
+
+const partnerEmail = () => (store.load(SETTINGS_KEY, {}).partnerEmail || '').trim();
+const money = (n) => '£' + Math.round(n).toLocaleString();
+const COMPARE = { Energy: 'https://www.moneysavingexpert.com/utilities/', Broadband: 'https://www.moneysavingexpert.com/broadband/', Mobile: 'https://www.moneysavingexpert.com/mobiles/', Insurance: 'https://www.moneysavingexpert.com/insurance/' };
+
+// Utilities
+function renderUtilities() {
+  const items = store.load(UTIL_KEY, []);
+  const list = $('util-list');
+  list.replaceChildren();
+  for (const u of [...items].sort((a, b) => (a.renewal || '9') < (b.renewal || '9') ? -1 : 1)) {
+    const cd = u.renewal ? countdown(u.renewal, u.type) : null;
+    const sub = [u.provider, u.cost ? money(u.cost) + '/mo' : null].filter(Boolean).join(' · ');
+    const row = el('div', { class: 'card doc' }, el('div', { class: 'line' },
+      el('div', {}, el('div', { class: 'name', text: u.type }), el('div', { class: 'sub', text: sub })),
+      cd ? el('span', { class: 'tag ' + cd.level, text: cd.text.replace(u.type + ' ', '') }) : null));
+    const actions = el('div', { class: 'row', style: 'margin-top:10px' });
+    if (COMPARE[u.type]) actions.append(el('a', { class: 'btn-a', href: COMPARE[u.type], target: '_blank', rel: 'noopener', text: 'Compare deals' }));
+    if (u.renewal) actions.append(el('a', { class: 'btn-a', href: calendarEvent(`${u.type} renewal${u.provider ? ' – ' + u.provider : ''}`, u.renewal, { guests: partnerEmail() }), target: '_blank', rel: 'noopener', text: 'Remind me' }));
+    const del = el('button', { class: 'del', text: '✕' });
+    del.addEventListener('click', () => { store.save(UTIL_KEY, items.filter((x) => x.id !== u.id)); renderUtilities(); renderDashboard(); });
+    actions.append(del);
+    row.append(actions);
+    list.append(row);
+  }
+  if (!items.length) list.append(el('li', { class: 'muted small', text: 'No plans added.' }));
+}
+$('btn-util-add').addEventListener('click', () => {
+  const entry = { id: Date.now(), type: $('util-type').value, provider: $('util-provider').value.trim(), cost: parseFloat($('util-cost').value) || 0, renewal: $('util-renewal').value };
+  store.save(UTIL_KEY, [entry, ...store.load(UTIL_KEY, [])]);
+  for (const id of ['util-provider', 'util-cost', 'util-renewal']) $(id).value = '';
+  renderUtilities(); renderDashboard();
+});
+
+// Subscriptions
+function renderSubs() {
+  const subs = store.load(SUBS_KEY, []);
+  const t = subscriptionsTotal(subs);
+  $('subs-total').replaceChildren(
+    el('div', { class: 'tile' }, el('div', { class: 'label', text: 'Per month' }), el('div', { class: 'value' }, el('span', { text: money(t.monthly) }))),
+    el('div', { class: 'tile' }, el('div', { class: 'label', text: 'Per year' }), el('div', { class: 'value' }, el('span', { text: money(t.yearly) })))
+  );
+  const list = $('subs-list');
+  list.replaceChildren();
+  for (const s of subs) {
+    list.append(deletableRow(s.name, `${money(s.cost)} ${s.cycle}${s.renewal ? ' · renews ' + fmtDate(s.renewal) : ''}`, () => {
+      store.save(SUBS_KEY, store.load(SUBS_KEY, []).filter((x) => x.id !== s.id)); renderSubs(); renderDashboard();
+    }));
+  }
+}
+$('btn-subs-add').addEventListener('click', () => {
+  const name = $('subs-name').value.trim();
+  if (!name) return alert('Please name the subscription.');
+  const entry = { id: Date.now(), name, cost: parseFloat($('subs-cost').value) || 0, cycle: $('subs-cycle').value, renewal: $('subs-renewal').value };
+  store.save(SUBS_KEY, [entry, ...store.load(SUBS_KEY, [])]);
+  for (const id of ['subs-name', 'subs-cost', 'subs-renewal']) $(id).value = '';
+  renderSubs(); renderDashboard();
+});
+
+// Tax
+function renderTaxDates() {
+  const list = $('tax-dates');
+  list.replaceChildren();
+  for (const d of taxDeadlines()) {
+    const cd = countdown(d.date, d.label);
+    list.append(el('li', {}, el('div', { class: 'line' }, el('div', { class: 'name', text: d.label }), el('span', { class: 'tag ' + cd.level, text: cd.text.replace(d.label + ' ', '') }))));
+  }
+}
+function calcTax() {
+  const salary = parseFloat($('tax-salary').value) || 0;
+  const out = $('tax-salary-out');
+  if (salary > 0) {
+    const t = takeHome(salary);
+    out.replaceChildren(...[['Income tax', money(t.tax)], ['NI', money(t.ni)], ['Take-home', money(t.net)]].map(([l, v]) =>
+      el('div', { class: 'tile' }, el('div', { class: 'label', text: l }), el('div', { class: 'value' }, el('span', { text: v })))));
+  } else out.replaceChildren();
+  const div = parseFloat($('tax-div').value) || 0;
+  $('tax-div-out').textContent = div > 0 ? `Estimated dividend tax: ${money(dividendTax(salary, div))}` : '';
+}
+$('tax-salary').addEventListener('input', calcTax);
+$('tax-div').addEventListener('input', calcTax);
+function allowanceBar(id, used, cap) {
+  const pct = Math.min(100, Math.round((used / cap) * 100));
+  $(id).textContent = `${money(used)} used · ${money(Math.max(0, cap - used))} left of ${money(cap)} (${pct}%)`;
+  $(id).className = 'status tag ' + (used >= cap ? 'soon' : 'ok');
+}
+function renderMoney() {
+  const m = store.load(MONEY_KEY, {});
+  $('isa-used').value = m.isa || '';
+  $('pension-used').value = m.pension || '';
+  allowanceBar('isa-bar', m.isa || 0, 20000);
+  allowanceBar('pension-bar', m.pension || 0, 60000);
+}
+$('isa-used').addEventListener('input', (e) => { const m = store.load(MONEY_KEY, {}); m.isa = parseFloat(e.target.value) || 0; store.save(MONEY_KEY, m); allowanceBar('isa-bar', m.isa, 20000); });
+$('pension-used').addEventListener('input', (e) => { const m = store.load(MONEY_KEY, {}); m.pension = parseFloat(e.target.value) || 0; store.save(MONEY_KEY, m); allowanceBar('pension-bar', m.pension, 60000); });
+
+// Home: inventory
+function renderInventory() {
+  const items = store.load(INV_KEY, []);
+  const total = items.reduce((s, x) => s + (x.value || 0), 0);
+  $('inv-total').textContent = items.length ? `${items.length} item${items.length === 1 ? '' : 's'} · ${money(total)} total` : '';
+  const list = $('inv-list');
+  list.replaceChildren();
+  for (const it of items) {
+    const sub = [it.room, it.value ? money(it.value) : null, it.serial ? 'S/N ' + it.serial : null].filter(Boolean).join(' · ');
+    const card = el('div', { class: 'card doc' }, el('div', { class: 'line' }, el('div', {}, el('div', { class: 'name', text: it.name }), el('div', { class: 'sub', text: sub })), null));
+    if (it.photo) { const img = el('img', { class: 'doc-photo', src: it.photo, alt: it.name }); img.addEventListener('click', () => window.open(it.photo, '_blank')); card.append(img); }
+    const del = el('button', { class: 'link del-wide', text: 'Delete' });
+    del.addEventListener('click', () => { store.save(INV_KEY, items.filter((x) => x.id !== it.id)); renderInventory(); });
+    card.append(del);
+    list.append(card);
+  }
+}
+$('btn-inv-add').addEventListener('click', async () => {
+  const name = $('inv-name').value.trim();
+  if (!name) return alert('Please name the item.');
+  const btn = $('btn-inv-add'); btn.disabled = true;
+  try {
+    let photo = null;
+    const file = $('inv-photo').files[0];
+    if (file) photo = await compressImage(file);
+    const entry = { id: Date.now(), name, room: $('inv-room').value.trim(), value: parseFloat($('inv-value').value) || 0, serial: $('inv-serial').value.trim(), photo };
+    store.save(INV_KEY, [entry, ...store.load(INV_KEY, [])]);
+    if (!store.load(INV_KEY, []).some((x) => x.id === entry.id)) return alert('Could not save — storage may be full. Try without a photo.');
+    for (const id of ['inv-name', 'inv-room', 'inv-value', 'inv-serial', 'inv-photo']) $(id).value = '';
+    renderInventory();
+  } finally { btn.disabled = false; }
+});
+
+// Home: meter readings
+function renderMeters() {
+  const all = store.load(METER_KEY, []);
+  const byType = {};
+  for (const r of all) (byType[r.type] ||= []).push(r);
+  const u = $('meter-usage');
+  const parts = [];
+  for (const [type, rows] of Object.entries(byType)) { const m = meterUsage(rows); if (m) parts.push(`${type}: ${m.perDay.toFixed(1)}/day`); }
+  u.textContent = parts.join(' · ');
+  const list = $('meter-list');
+  list.replaceChildren();
+  for (const r of [...all].sort((a, b) => (a.date < b.date ? 1 : -1))) {
+    list.append(deletableRow(`${r.type} — ${r.reading}`, fmtDate(r.date), () => { store.save(METER_KEY, all.filter((x) => x.id !== r.id)); renderMeters(); }));
+  }
+}
+$('btn-meter-add').addEventListener('click', () => {
+  const reading = parseFloat($('meter-reading').value);
+  if (isNaN(reading)) return alert('Please enter the reading.');
+  const entry = { id: Date.now(), type: $('meter-type').value, date: $('meter-date').value || new Date().toISOString().slice(0, 10), reading };
+  store.save(METER_KEY, [entry, ...store.load(METER_KEY, [])]);
+  $('meter-reading').value = '';
+  renderMeters();
+});
+
+// Home: maintenance
+function renderMaint() {
+  const items = store.load(MAINT_KEY, []);
+  const list = $('maint-list');
+  list.replaceChildren();
+  for (const m of [...items].sort((a, b) => (a.date < b.date ? -1 : 1))) {
+    const cd = m.date ? countdown(m.date, m.task) : null;
+    const row = el('li', {}, el('div', { class: 'line' },
+      el('div', {}, el('div', { class: 'name', text: m.task }), m.date ? el('div', { class: 'sub', text: fmtDate(m.date) }) : null),
+      cd ? el('span', { class: 'tag ' + cd.level, text: cd.text.replace(m.task + ' ', '') }) : null));
+    const del = el('button', { class: 'del', text: '✕' });
+    del.addEventListener('click', () => { store.save(MAINT_KEY, items.filter((x) => x.id !== m.id)); renderMaint(); renderDashboard(); });
+    row.querySelector('.line').append(del);
+    list.append(row);
+  }
+}
+$('btn-maint-add').addEventListener('click', () => {
+  const task = $('maint-task').value.trim();
+  if (!task) return alert('Please name the task.');
+  store.save(MAINT_KEY, [{ id: Date.now(), task, date: $('maint-date').value }, ...store.load(MAINT_KEY, [])]);
+  $('maint-task').value = ''; $('maint-date').value = '';
+  renderMaint(); renderDashboard();
+});
+
+// Health: check-ups
+function renderCheckups() {
+  const items = store.load(CHECK_KEY, []);
+  const list = $('check-list');
+  list.replaceChildren();
+  for (const c of items) {
+    const due = nextDue(c.last, c.interval);
+    const cd = due ? countdown(due, c.type) : null;
+    const row = el('li', {}, el('div', { class: 'line' },
+      el('div', {}, el('div', { class: 'name', text: c.type }), el('div', { class: 'sub', text: c.last ? 'Last ' + fmtDate(c.last) : '' })),
+      cd ? el('span', { class: 'tag ' + cd.level, text: cd.text.replace(c.type + ' ', '') }) : null));
+    const del = el('button', { class: 'del', text: '✕' });
+    del.addEventListener('click', () => { store.save(CHECK_KEY, items.filter((x) => x.id !== c.id)); renderCheckups(); renderDashboard(); });
+    row.querySelector('.line').append(del);
+    list.append(row);
+  }
+}
+$('btn-check-add').addEventListener('click', () => {
+  const type = $('check-type').value.trim();
+  if (!type) return alert('Please name the check-up.');
+  store.save(CHECK_KEY, [{ id: Date.now(), type, last: $('check-last').value, interval: parseInt($('check-interval').value) || 0 }, ...store.load(CHECK_KEY, [])]);
+  for (const id of ['check-type', 'check-last', 'check-interval']) $(id).value = '';
+  renderCheckups(); renderDashboard();
+});
+
+// Emergency card + partner email (bound inputs)
+const EMG_FIELDS = { 'emg-blood': 'blood', 'emg-nhs': 'nhs', 'emg-allergies': 'allergies', 'emg-meds': 'meds', 'emg-contact': 'contact' };
+function initEmergency() {
+  const e = store.load(EMG_KEY, {});
+  for (const [id, key] of Object.entries(EMG_FIELDS)) {
+    $(id).value = e[key] || '';
+    $(id).addEventListener('input', (ev) => { const cur = store.load(EMG_KEY, {}); cur[key] = ev.target.value; store.save(EMG_KEY, cur); });
+  }
+  $('partner-email').value = store.load(SETTINGS_KEY, {}).partnerEmail || '';
+  $('partner-email').addEventListener('input', (ev) => { const s = store.load(SETTINGS_KEY, {}); s.partnerEmail = ev.target.value.trim(); store.save(SETTINGS_KEY, s); });
+}
+
+// Extra dashboard reminders from the new sections
+function collectExtraReminders() {
+  const items = [];
+  const add = (date, label, sub) => { const cd = date ? countdown(date, label) : null; if (cd) items.push({ label, sub, days: cd.days, level: cd.level, text: cd.text }); };
+  for (const u of store.load(UTIL_KEY, [])) add(u.renewal, u.type + (u.provider ? ' (' + u.provider + ')' : ''), 'Utilities');
+  for (const s of store.load(SUBS_KEY, [])) add(s.renewal, s.name, 'Subscription');
+  for (const m of store.load(MAINT_KEY, [])) add(m.date, m.task, 'Home');
+  for (const c of store.load(CHECK_KEY, [])) add(nextDue(c.last, c.interval), c.type, 'Health');
+  for (const d of taxDeadlines()) add(d.date, d.label, 'Tax');
+  return items;
+}
+
+function initLifeSections() {
+  renderUtilities();
+  renderSubs();
+  renderTaxDates();
+  calcTax();
+  renderMoney();
+  renderInventory();
+  renderMeters();
+  renderMaint();
+  renderCheckups();
+  initEmergency();
+}
 
 // ---------- text size ----------
 const TEXT_KEY = 'tiguan-textsize';
@@ -1295,6 +1546,7 @@ function initAll() {
   initCarTab();
   renderDocs();
   renderDeliveries();
+  initLifeSections();
   renderDashboard();
   if (!bluetoothSupported()) {
     $('unsupported').hidden = false;

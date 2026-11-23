@@ -39,19 +39,23 @@ export function motCountdown(dueISO, now = new Date()) {
 export const GOV_MOT_HISTORY = 'https://www.check-mot.service.gov.uk/';
 export const GOV_TAX_CHECK = 'https://vehicleenquiry.service.gov.uk/';
 
-/** A Google Calendar "create event" link for the MOT due date (an all-day reminder). */
-export function calendarUrl(reg, dueISO) {
+/** A Google Calendar "create event" link for a date (an all-day reminder). */
+export function calendarEvent(title, dueISO, { details = '', guests = '' } = {}) {
   const start = new Date(dueISO + 'T00:00:00');
   if (isNaN(start)) return null;
   const end = new Date(start.getTime() + 86400000);
-  const title = `MOT due${reg ? ` – ${reg.toUpperCase()}` : ''}`;
-  const params = new URLSearchParams({
-    action: 'TEMPLATE',
-    text: title,
-    dates: `${ymd(start)}/${ymd(end)}`,
-    details: 'MOT test due. Book it in good time to avoid driving without a valid MOT.',
-  });
+  const params = new URLSearchParams({ action: 'TEMPLATE', text: title, dates: `${ymd(start)}/${ymd(end)}` });
+  if (details) params.set('details', details);
+  if (guests) params.set('add', guests);
   return 'https://calendar.google.com/calendar/render?' + params.toString();
+}
+
+/** MOT reminder calendar link (optionally inviting a partner). */
+export function calendarUrl(reg, dueISO, guests = '') {
+  return calendarEvent(`MOT due${reg ? ` – ${reg.toUpperCase()}` : ''}`, dueISO, {
+    details: 'MOT test due. Book it in good time to avoid driving without a valid MOT.',
+    guests,
+  });
 }
 
 /** Light validation / tidy-up of a UK registration. Not strict — just trims and upper-cases. */

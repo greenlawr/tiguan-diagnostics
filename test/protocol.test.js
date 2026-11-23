@@ -430,3 +430,43 @@ test('parseShared pulls item, carrier and tracking from shared text', () => {
   assert.ok(r.item.length > 0);
   assert.ok(CARRIER_NAMES.includes('Amazon'));
 });
+
+// ---------- life admin logic (tax, subs, health, meters) ----------
+import { incomeTax, employeeNI, dividendTax, takeHome, taxDeadlines, subscriptionsTotal, monthlyEquivalent, nextDue, meterUsage, personalAllowance } from '../js/life.js';
+
+test('UK income tax estimates (England, rough)', () => {
+  assert.equal(incomeTax(12570), 0);
+  assert.equal(incomeTax(50270), 7540);      // full basic band
+  assert.equal(incomeTax(100000), 27432);
+  assert.equal(personalAllowance(125140), 0); // fully tapered
+  assert.equal(incomeTax(125140), 42516);
+});
+
+test('NI and dividend tax', () => {
+  assert.equal(employeeNI(50270), 3016);
+  assert.equal(dividendTax(0, 10000), Math.round(9500 * 0.0875)); // all basic
+  assert.equal(dividendTax(50000, 10000), Math.round((50270 - 50000) * 0.0875 + (10000 - 500 - (50270 - 50000)) * 0.3375));
+  const th = takeHome(50270);
+  assert.equal(th.net, 50270 - 7540 - 3016);
+});
+
+test('tax deadlines are the next 31 Jan and 31 Jul', () => {
+  const d = taxDeadlines(new Date('2026-03-01'));
+  assert.deepEqual(d.map((x) => x.date), ['2027-01-31', '2026-07-31']);
+});
+
+test('subscriptions monthly/yearly totals', () => {
+  assert.equal(monthlyEquivalent({ cost: 120, cycle: 'yearly' }), 10);
+  const t = subscriptionsTotal([{ cost: 9.99, cycle: 'monthly' }, { cost: 120, cycle: 'yearly' }]);
+  assert.ok(Math.abs(t.monthly - 19.99) < 0.001);
+  assert.ok(Math.abs(t.yearly - 239.88) < 0.01);
+});
+
+test('health next-due and meter usage', () => {
+  assert.equal(nextDue('2026-01-15', 6), '2026-07-15');
+  assert.equal(nextDue('', 6), null);
+  const u = meterUsage([{ date: '2026-01-01', reading: 1000 }, { date: '2026-01-11', reading: 1100 }]);
+  assert.equal(u.used, 100);
+  assert.equal(u.perDay, 10);
+  assert.equal(meterUsage([{ date: '2026-01-01', reading: 1000 }]), null);
+});
