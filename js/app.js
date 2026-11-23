@@ -362,7 +362,7 @@ function systemRow(s) {
 
 function changeCard(diff) {
   const card = el('div', { class: 'card change' }, el('h2', { text: 'What\'s changed' }));
-  const since = `since your last check on ${new Date(diff.prevDate).toLocaleDateString()}`;
+  const since = `since your last check on ${new Date(diff.prevDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}`;
   if (!diff.changed) {
     card.append(el('p', { class: 'muted', text: `No change ${since}.` }));
     return card;
@@ -390,7 +390,7 @@ function renderReport(r, { past = false, previous = null } = {}) {
       { class: 'verdict ' + r.level },
       el('div', { class: 'headline', text: r.headline }),
       el('p', { text: r.summary }),
-      el('div', { class: 'when', text: (past ? 'Saved check from ' : 'Checked ') + new Date(r.date).toLocaleString() })
+      el('div', { class: 'when', text: (past ? 'Saved check from ' : 'Checked ') + new Date(r.date).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) })
     )
   );
 
@@ -474,7 +474,7 @@ function renderHistory() {
         el(
           'div',
           { class: 'line' },
-          el('div', {}, el('div', { class: 'name', text: new Date(r.date).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) }), el('span', { class: 'tag ' + r.level, text: r.headline })),
+          el('div', {}, el('div', { class: 'name', text: new Date(r.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) }), el('span', { class: 'tag ' + r.level, text: r.headline })),
           btn
         )
       )
@@ -813,7 +813,7 @@ function renderTrips() {
   const list = $('trips-list');
   list.replaceChildren();
   for (const t of trips) {
-    const when = new Date(t.date).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+    const when = new Date(t.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
     const detail = `${t.miles.toFixed(1)} miles · ${formatDuration(t.seconds)}${t.avgMpg > 0 ? ` · ${t.avgMpg.toFixed(1)} mpg` : ''}`;
     list.append(el('li', {}, el('div', { class: 'line' }, el('div', {}, el('div', { class: 'name', text: when }), el('div', { class: 'sub', text: detail })))));
   }
@@ -828,7 +828,7 @@ const PARK_KEY = 'tiguan-park';
 const loadVehicle = () => store.load(VEHICLE_KEY, {});
 const saveVehicle = (v) => store.save(VEHICLE_KEY, v);
 
-const fmtDate = (iso) => new Date(iso + (iso.length === 10 ? 'T00:00:00' : '')).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+const fmtDate = (iso) => new Date(iso + (iso.length === 10 ? 'T00:00:00' : '')).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
 
 // Renewals + registration
 function refreshRenewals() {
@@ -915,7 +915,7 @@ function renderFuel() {
   const bySeg = new Map(s.segments.map((seg) => [seg.toOdo, seg]));
   for (const f of [...fills].sort((a, b) => b.odo - a.odo)) {
     const seg = bySeg.get(f.odo);
-    const detail = `${f.litres.toFixed(1)} L${f.cost ? ` · £${f.cost.toFixed(2)}` : ''} · ${f.odo.toLocaleString()} mi${seg ? ` · ${seg.mpg.toFixed(1)} mpg` : ''}`;
+    const detail = `${f.litres.toFixed(1)} L${f.cost ? ` · £${f.cost.toFixed(2)}` : ''} · ${f.odo.toLocaleString('en-GB')} mi${seg ? ` · ${seg.mpg.toFixed(1)} mpg` : ''}`;
     list.append(deletableRow(fmtDate(f.date), detail, () => {
       store.save(FUEL_KEY, store.load(FUEL_KEY, []).filter((x) => x.id !== f.id));
       renderFuel();
@@ -941,7 +941,7 @@ function renderService() {
   const list = $('svc-list');
   list.replaceChildren();
   for (const r of [...items].sort((a, b) => (a.date < b.date ? 1 : -1))) {
-    const detail = `${r.odo ? r.odo.toLocaleString() + ' mi' : ''}${r.odo && r.cost ? ' · ' : ''}${r.cost ? '£' + r.cost.toFixed(2) : ''}`;
+    const detail = `${r.odo ? r.odo.toLocaleString('en-GB') + ' mi' : ''}${r.odo && r.cost ? ' · ' : ''}${r.cost ? '£' + r.cost.toFixed(2) : ''}`;
     list.append(deletableRow(`${fmtDate(r.date)} — ${r.what}`, detail, () => {
       store.save(SERVICE_KEY, store.load(SERVICE_KEY, []).filter((x) => x.id !== r.id));
       renderService();
@@ -965,7 +965,7 @@ function renderMileage() {
   const trips = store.load(MILEAGE_KEY, []);
   const m = mileageSummary(trips);
   $('mileage-summary').replaceChildren(
-    el('div', { class: 'tile' }, el('div', { class: 'label', text: 'Business miles (this tax year)' }), el('div', { class: 'value' }, el('span', { text: Math.round(m.businessMiles).toLocaleString() }))),
+    el('div', { class: 'tile' }, el('div', { class: 'label', text: 'Business miles (this tax year)' }), el('div', { class: 'value' }, el('span', { text: Math.round(m.businessMiles).toLocaleString('en-GB') }))),
     el('div', { class: 'tile' }, el('div', { class: 'label', text: 'Reclaim estimate' }), el('div', { class: 'value' }, el('span', { text: '£' + m.reclaim.toFixed(0) })))
   );
   $('btn-mile-export').hidden = trips.length === 0;
@@ -1568,7 +1568,7 @@ const EMG_KEY = 'tiguan-emergency';
 const SETTINGS_KEY = 'tiguan-settings';
 
 const partnerEmail = () => (store.load(SETTINGS_KEY, {}).partnerEmail || '').trim();
-const money = (n) => '£' + Math.round(n).toLocaleString();
+const money = (n) => '£' + Math.round(n).toLocaleString('en-GB');
 const COMPARE = { Energy: 'https://www.moneysavingexpert.com/utilities/', Broadband: 'https://www.moneysavingexpert.com/broadband/', Mobile: 'https://www.moneysavingexpert.com/mobiles/', Insurance: 'https://www.moneysavingexpert.com/insurance/' };
 
 // Utilities
@@ -2149,7 +2149,7 @@ function syncNow() {
       store.save(SHARED_KEY, merged);
       if (dedupeShared() || localNewer) scheduleSync();
       renderSharedAll();
-      setStatus('sync-status', 'Synced ' + new Date().toLocaleTimeString());
+      setStatus('sync-status', 'Synced ' + new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }));
       updateLostCheck();
     } catch (e) {
       if (/410/.test(e.message)) {
@@ -2934,7 +2934,7 @@ function refreshCalConnectUI() {
   if ($('cal-hide') !== document.activeElement) $('cal-hide').value = s.calHide || '';
   $('cal-conn-status').textContent = s.calError
     ? `— couldn't update: ${s.calError}`
-    : s.calLast ? `· connected ✓ · updated ${new Date(s.calLast).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : '· connected ✓';
+    : s.calLast ? `· connected ✓ · updated ${new Date(s.calLast).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}` : '· connected ✓';
 }
 $('btn-cal-connect').addEventListener('click', async () => {
   const link = $('cal-ics').value.trim().replace(/^webcal:/i, 'https:');
@@ -3332,7 +3332,7 @@ function renderLost() {
 
 // ---------- app updates ----------
 // Must match CACHE in sw.js (a test checks this).
-const APP_VERSION = 'evergreen-v51';
+const APP_VERSION = 'evergreen-v52';
 let updateReady = false;
 async function checkForUpdate(manual = false) {
   try {

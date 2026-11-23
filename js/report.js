@@ -159,7 +159,7 @@ export function diffReports(current, previous) {
 
 /** Plain-text version for sharing with a garage. */
 export function reportText(r) {
-  const when = new Date(r.date).toLocaleString();
+  const when = new Date(r.date).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
   const lines = [
     'VW TIGUAN HEALTH CHECK',
     when,
