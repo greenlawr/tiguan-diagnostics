@@ -17,6 +17,7 @@ import { biometricAvailable, biometricConfigured, enableBiometric, unlockBiometr
 import { generateHouseholdCode, normalizeCode, householdId, writeToken } from './household.js';
 import { parseICS, expandEvents } from './ical.js';
 import { makeVerifier, checkVerifier } from './lost.js';
+import { ageText, nextBirthday, mask, nhsNumberValid } from './family.js';
 import { syncShared } from './sync.js';
 import { savePhoto, loadPhoto, deletePhoto, exportAllPhotos, importAllPhotos } from './photos.js';
 import { parseImport, importCount } from './import.js';
@@ -1196,7 +1197,7 @@ const HOME_TILES = [
   { icon: '💳', label: 'Loyalty', go: () => goLife('loyalty') },
   { icon: '🩺', label: 'Car check', go: () => showTab('check') },
   { icon: '🚗', label: 'My car', go: () => showTab('car') },
-  { icon: '⛽', label: 'Trips', go: () => showTab('trips') },
+  { icon: '👨‍👩‍👧', label: 'Family', go: () => goLife('family'), badge: () => { const n = sharedItems('child').filter((c) => { const cd = c.passportExpiry && countdown(c.passportExpiry, ''); return cd && cd.days <= 180; }).length; return n ? { text: String(n), cls: 'soon' } : null; } },
   { icon: '⚙️', label: 'Settings', go: () => showTab('help') },
 ];
 function renderTiles() {
@@ -1232,6 +1233,13 @@ function upcomingEvents(days = 7) {
     const d = new Date(e.date + 'T00:00:00');
     return !isNaN(d) && d >= today && d < horizon;
   });
+  // Birthdays from Family appear automatically.
+  for (const c of sharedItems('child')) {
+    const nb = c.dob && nextBirthday(c.dob, todayISO());
+    if (!nb) continue;
+    const d = new Date(nb.date + 'T00:00:00');
+    if (d >= today && d < horizon) rows.push({ id: 'bday-' + c.id, title: `🎂 ${c.name}'s birthday${nb.turning ? ` (${nb.turning})` : ''}`, date: nb.date, time: '', who: 'Birthdays', virtual: true });
+  }
   rows.sort((a, b) => ((eventStart(a)?.getTime() || 0) - (eventStart(b)?.getTime() || 0)));
   return rows;
 }
@@ -1265,6 +1273,7 @@ $('sheet').addEventListener('click', (e) => { if (e.target === $('sheet')) close
 const ADDED_HERE = '#d98a00';
 function personColour(who) {
   if (!who) return ADDED_HERE;
+  if (who === 'Birthdays') return '#8a4fd6';
   return who === myName() ? '#1f9a5d' : '#d6457a'; // you green, your partner pink
 }
 const whenText = (e) => (/^\d/.test((e.time || '').trim()) ? e.time.trim() : 'All day');
@@ -1286,7 +1295,9 @@ function showEvent(e) {
     el('p', { class: 'muted', text: `${d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })} · ${whenText(e)}` })];
   if (e.where) nodes.push(el('p', { text: '📍 ' + e.where }));
   const row = el('div', { class: 'row' });
-  if (e.src) {
+  if (e.virtual) {
+    nodes.push(el('p', { class: 'muted small', text: 'From Family — change the date of birth there and this updates.' }));
+  } else if (e.src) {
     nodes.push(el('p', { class: 'muted small', text: `This comes from ${e.who ? e.who + "'s" : 'a connected'} Google Calendar — change or delete it there and it updates here.` }));
   } else {
     const del = el('button', { text: 'Delete event' });
@@ -1963,6 +1974,7 @@ function collectExtraReminders() {
   for (const m of store.load(MAINT_KEY, [])) add(m.date, m.task, 'Home');
   for (const c of store.load(CHECK_KEY, [])) add(nextDue(c.last, c.interval), c.type, 'Health');
   for (const d of taxDeadlines()) add(d.date, d.label, 'Tax');
+  for (const c of sharedItems('child')) if (c.passportExpiry) add(c.passportExpiry, `${c.name}'s passport`, 'Family');
   return items;
 }
 
@@ -2204,7 +2216,7 @@ function peopleOptions(sel, includeAnyone) {
   for (const n of [myName(), partnerName()]) sel.add(new Option(n, n));
   if (keep) sel.value = keep;
 }
-function renderSharedAll() { renderShared(); renderBills(); renderTasks(); renderDeliveries(); renderUtilities(); renderCalendar(); renderHome(); renderLost(); }
+function renderSharedAll() { renderShared(); renderBills(); renderTasks(); renderDeliveries(); renderUtilities(); renderFamily(); renderCalendar(); renderHome(); renderLost(); }
 
 // Shared bills with who-owes-whom
 function renderBills() {
@@ -2964,6 +2976,164 @@ $('btn-cal-disconnect').addEventListener('click', () => {
 const persistCalHide = debounce((v) => { saveSettings({ calHide: v }); pullCalendar(true).catch(() => {}); }, 900);
 $('cal-hide').addEventListener('input', (e) => persistCalHide(e.target.value));
 
+// ---------- Family: key details for the children (shared, encrypted) ----------
+const CHILD_GROUPS = [
+  { group: 'Identity', fields: [
+    { k: 'nhs', label: 'NHS number', secret: true, inputmode: 'numeric' },
+    { k: 'passport', label: 'Passport number', secret: true },
+    { k: 'passportExpiry', label: 'Passport expires', type: 'date' },
+    { k: 'birthCert', label: 'Birth certificate no.', secret: true },
+  ] },
+  { group: 'Health', fields: [
+    { k: 'blood', label: 'Blood group' },
+    { k: 'allergies', label: 'Allergies' },
+    { k: 'medication', label: 'Medication' },
+    { k: 'conditions', label: 'Conditions / needs' },
+    { k: 'gp', label: 'GP surgery' },
+    { k: 'gpPhone', label: 'GP phone', type: 'tel' },
+    { k: 'dentist', label: 'Dentist' },
+    { k: 'dentistPhone', label: 'Dentist phone', type: 'tel' },
+  ] },
+  { group: 'School', fields: [
+    { k: 'school', label: 'School / nursery' },
+    { k: 'class', label: 'Class / year' },
+    { k: 'teacher', label: 'Teacher' },
+    { k: 'schoolPhone', label: 'School phone', type: 'tel' },
+  ] },
+  { group: 'Sizes', fields: [
+    { k: 'clothes', label: 'Clothes size' },
+    { k: 'shoes', label: 'Shoe size' },
+  ] },
+];
+const children = () => sharedItems('child').sort((a, b) => ((a.dob || '9') < (b.dob || '9') ? -1 : 1)); // oldest first
+const looksSecret = (v) => /\d{4,}/.test(String(v).replace(/\s/g, ''));
+function copyValue(v, label) {
+  navigator.clipboard?.writeText(String(v)).then(() => toast(`${label} copied`), () => toast('Could not copy'));
+}
+function renderFamily() {
+  const out = $('family-list');
+  if (!out) return;
+  out.replaceChildren();
+  const kids = children();
+  if (!kids.length) { out.append(el('p', { class: 'muted small', text: 'No one added yet — tap “+ Add a child”.' })); return; }
+  const today = todayISO();
+  for (const c of kids) {
+    const nb = c.dob ? nextBirthday(c.dob, today) : null;
+    const sub = [c.dob ? ageText(c.dob, today) : '', nb ? (nb.date === today ? `🎂 ${nb.turning} today!` : dayLabel(nb.date) === 'Tomorrow' ? '🎂 birthday tomorrow' : `birthday ${new Date(nb.date + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'long' })}`) : ''].filter(Boolean).join(' · ');
+    const card = el('div', { class: 'card child-card' });
+    const show = el('button', { class: 'child-show', text: 'Show numbers' });
+    card.append(el('div', { class: 'line' }, el('div', {}, el('div', { class: 'child-name', text: c.name || 'Child' }), sub ? el('div', { class: 'sub', text: sub }) : null), show));
+    const body = el('div', {});
+    let revealed = false;
+    let hideTimer = null;
+    const draw = () => {
+      body.replaceChildren();
+      const groups = CHILD_GROUPS.map((g) => ({ group: g.group, rows: g.fields.filter((f) => c[f.k]).map((f) => ({ ...f, value: c[f.k] })) }));
+      const extras = (c.extras || []).filter((x) => x && x.label && x.value).map((x) => ({ k: x.label, label: x.label, value: x.value, secret: looksSecret(x.value) }));
+      if (extras.length) groups.push({ group: 'Other details', rows: extras });
+      let any = false;
+      for (const g of groups) {
+        if (!g.rows.length) continue;
+        any = true;
+        const dl = el('dl', { class: 'child-dl' });
+        for (const f of g.rows) {
+          let node;
+          if (f.type === 'date') {
+            const cd = countdown(f.value, '');
+            node = el('span', {}, fmtDate(f.value), cd && cd.days <= 180 ? el('span', { class: 'tag ' + (cd.days < 0 ? 'urgent' : 'soon'), style: 'margin-left:6px', text: cd.days < 0 ? 'expired' : `${cd.days} days` }) : null);
+          } else if (f.type === 'tel') {
+            node = el('a', { href: 'tel:' + String(f.value).replace(/[^\d+]/g, ''), text: f.value });
+          } else if (f.secret && !revealed) {
+            node = el('span', { class: 'child-masked', text: mask(f.value) });
+          } else if (f.secret) {
+            node = el('button', { class: 'child-copy', text: f.value, title: 'Tap to copy' });
+            node.addEventListener('click', () => copyValue(f.value, f.label));
+          } else node = el('span', { text: f.value });
+          dl.append(el('dt', { text: f.label }), el('dd', {}, node));
+        }
+        body.append(el('div', { class: 'child-group', text: g.group }), dl);
+      }
+      if (c.notes) { any = true; body.append(el('div', { class: 'child-group', text: 'Notes' }), el('p', { class: 'child-notes', text: c.notes })); }
+      if (!any) body.append(el('p', { class: 'muted small', text: 'No details yet — tap Edit to add some.' }));
+    };
+    show.addEventListener('click', () => {
+      revealed = !revealed;
+      show.textContent = revealed ? 'Hide numbers' : 'Show numbers';
+      clearTimeout(hideTimer);
+      if (revealed) hideTimer = setTimeout(() => { revealed = false; show.textContent = 'Show numbers'; draw(); }, 60000); // hide again after a minute
+      draw();
+    });
+    draw();
+    const edit = el('button', { text: 'Edit' });
+    edit.addEventListener('click', () => openChildEditor(c));
+    card.append(body, el('div', { class: 'row', style: 'margin-top:12px' }, edit));
+    out.append(card);
+  }
+}
+function openChildEditor(child) {
+  const c = child || {};
+  const inputs = {};
+  const field = (f) => {
+    const input = el('input', { type: f.type || 'text', autocomplete: 'off', ...(f.inputmode ? { inputmode: f.inputmode } : {}) });
+    input.value = c[f.k] || '';
+    inputs[f.k] = input;
+    return el('label', { class: 'field' }, f.label, input);
+  };
+  const name = el('input', { type: 'text', autocomplete: 'off', placeholder: 'e.g. Maddy' }); name.value = c.name || '';
+  const dob = el('input', { type: 'date' }); dob.value = c.dob || '';
+  const nhsHint = el('p', { class: 'muted small', style: 'margin:-6px 0 8px' });
+  const notes = el('textarea', { rows: '3', placeholder: 'Anything else worth knowing — e.g. Red Book is in the kitchen drawer' }); notes.value = c.notes || '';
+  const extrasBox = el('div', {});
+  const addExtra = (x = {}) => {
+    const label = el('input', { type: 'text', placeholder: 'What (e.g. Swim club no.)' }); label.value = x.label || '';
+    const value = el('input', { type: 'text', placeholder: 'Detail' }); value.value = x.value || '';
+    const del = el('button', { class: 'del', text: '✕', 'aria-label': 'Remove' });
+    const row = el('div', { class: 'row child-extra' }, label, value, del);
+    del.addEventListener('click', () => row.remove());
+    row._get = () => ({ label: label.value.trim(), value: value.value.trim() });
+    extrasBox.append(row);
+  };
+  (c.extras || []).forEach(addExtra);
+  const moreBtn = el('button', { class: 'link', text: '+ Add another detail' });
+  moreBtn.addEventListener('click', () => addExtra());
+  const sections = CHILD_GROUPS.map((g) => el('details', { class: 'inner', ...(g.group === 'Identity' ? { open: '' } : {}) }, el('summary', { text: g.group }), ...g.fields.map(field)));
+  const checkNhs = () => {
+    const v = inputs.nhs.value.trim();
+    nhsHint.textContent = v && !nhsNumberValid(v) ? "That doesn't look like a valid NHS number — check the digits (it's 10 digits, e.g. 943 476 5919)." : '';
+  };
+  inputs.nhs.addEventListener('input', checkNhs);
+  inputs.nhs.closest('label').after(nhsHint);
+  checkNhs();
+  const save = el('button', { class: 'primary', text: child ? 'Save' : 'Add' });
+  const cancel = el('button', { text: 'Cancel' });
+  cancel.addEventListener('click', closeSheet);
+  save.addEventListener('click', () => {
+    if (!name.value.trim()) { name.focus(); return toast('Add their name.'); }
+    const data = { name: name.value.trim(), dob: dob.value, notes: notes.value.trim(), extras: [...extrasBox.children].map((r) => r._get()).filter((x) => x.label && x.value) };
+    for (const [k, input] of Object.entries(inputs)) data[k] = input.value.trim();
+    if (child) sharedUpdate(child.id, data); else sharedAdd('child', data);
+    scheduleSync(); renderFamily(); renderCalendar(); renderHome(); closeSheet(); haptic();
+    toast(child ? 'Saved ✓' : `${data.name} added ✓`);
+  });
+  const nodes = [el('h2', { text: child ? `Edit ${c.name}` : 'Add a child' }),
+    el('label', { class: 'field' }, 'Name', name), el('label', { class: 'field' }, 'Date of birth', dob),
+    ...sections,
+    el('details', { class: 'inner' }, el('summary', { text: 'Other details' }), extrasBox, moreBtn),
+    el('label', { class: 'field' }, 'Notes', notes),
+    el('div', { class: 'row' }, cancel, save)];
+  if (child) {
+    const del = el('button', { class: 'link', style: 'color:var(--urgent, #c0392b);margin-top:8px', text: `Remove ${c.name}` });
+    del.addEventListener('click', () => {
+      if (!confirm(`Remove ${c.name} and all their details from both phones?`)) return;
+      sharedRemove(child.id); scheduleSync(); renderFamily(); renderCalendar(); renderHome(); closeSheet();
+      toast(`${c.name} removed`);
+    });
+    nodes.push(del);
+  }
+  openSheet(...nodes);
+}
+$('btn-child-add').addEventListener('click', () => openChildEditor(null));
+
 // ---------- lost-phone protection ----------
 // Each phone registers itself in the shared space with a one-way verifier of
 // its owner's passphrase. The other phone can then report it lost — only with
@@ -3162,7 +3332,7 @@ function renderLost() {
 
 // ---------- app updates ----------
 // Must match CACHE in sw.js (a test checks this).
-const APP_VERSION = 'evergreen-v50';
+const APP_VERSION = 'evergreen-v51';
 let updateReady = false;
 async function checkForUpdate(manual = false) {
   try {
@@ -3226,6 +3396,7 @@ async function initAll() {
   initCarTab();
   renderDocs();
   renderDeliveries();
+  renderFamily();
   renderCalendar();
   initLifeSections();
   renderHome();

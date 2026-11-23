@@ -477,3 +477,17 @@ button:active:not(:disabled), .btn-a:active { transform: translateY(1px); }
 
 /* Life hub: blocks outside the open section */
 .sec-off { display: none !important; }
+
+/* Family */
+.child-card .child-name { font-size: 19px; font-weight: 700; }
+.child-show { width: auto; min-height: 36px; padding: 6px 12px; font-size: 14px; border-radius: 999px; flex: 0 0 auto; }
+.child-group { margin: 14px 0 4px; font-size: 12px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); }
+.child-dl { display: grid; grid-template-columns: minmax(0, 42%) minmax(0, 1fr); gap: 6px 12px; margin: 0; }
+.child-dl dt { color: var(--muted); font-size: 14px; }
+.child-dl dd { margin: 0; font-size: 15px; overflow-wrap: anywhere; }
+.child-masked { letter-spacing: .06em; font-variant-numeric: tabular-nums; }
+.child-copy { background: none; border: 0; padding: 0; min-height: 0; font: inherit; color: var(--accent); text-align: left; font-variant-numeric: tabular-nums; }
+.child-notes { margin: 0; white-space: pre-wrap; }
+.child-extra { gap: 6px; margin-bottom: 6px; }
+.child-extra input { flex: 1; min-width: 0; font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 10px; min-height: 44px; }
+.sheet-panel textarea { width: 100%; font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }

@@ -24,6 +24,7 @@ const COLOURS = {
   tasks: ['#b9ec4d', '#4f9a0f'],
   flame: ['#ffa45c', '#e5481f'],
   drop: ['#5fd0ff', '#1677d6'],
+  family: ['#f39bd8', '#a743cf'],
 };
 
 // Symbols drawn on a 48×48 grid. `D` is replaced with the tile's dark colour.
@@ -92,6 +93,9 @@ const GLYPHS = {
     <rect x="24.5" y="29" width="7.5" height="2.2" rx="1.1" fill="D" opacity=".45"/>`,
   flame: `<path d="M24 8.5c1.6 5.2 8 8.6 8 16a8 8 0 0 1-16 0c0-3.8 1.9-6.1 3.8-8 .4 2.5 1.7 4.1 3.3 4.8C22.3 16.6 22.2 12.3 24 8.5z" fill="#fff"/>
     <path d="M24 37.5a4 4 0 0 1-4-4c0-2.5 2.3-4 4-6.6 1.7 2.6 4 4.1 4 6.6a4 4 0 0 1-4 4z" fill="D" opacity=".55"/>`,
+  family: `<circle cx="16" cy="15.5" r="4.2" fill="#fff" opacity=".85"/><circle cx="32" cy="15.5" r="4.2" fill="#fff" opacity=".85"/>
+    <path d="M8 34a8 8 0 0 1 16 0z" fill="#fff" opacity=".85"/><path d="M24 34a8 8 0 0 1 16 0z" fill="#fff" opacity=".85"/>
+    <circle cx="24" cy="24" r="3.6" fill="#fff"/><path d="M17.5 38.5a6.5 6.5 0 0 1 13 0z" fill="#fff"/>`,
   drop: `<path d="M24 9c5 6.6 10.5 12 10.5 18.2a10.5 10.5 0 0 1-21 0C13.5 21 19 15.6 24 9z" fill="#fff"/>
     <path d="M18.6 28a5.8 5.8 0 0 0 4.4 5.5" fill="none" stroke="D" stroke-width="2.3" stroke-linecap="round" opacity=".5"/>`,
 };
@@ -119,10 +123,10 @@ export const TILE_ICON = {
   'Car check': 'gauge', 'My car': 'car', 'Shopping list': 'cart', 'Documents': 'doc',
   'Utilities': 'bolt', 'Money & tax': 'money', 'Home': 'house', 'Health': 'heart',
   'Deliveries': 'box', 'Loyalty': 'card', 'Trips': 'fuel', 'Settings': 'gear',
-  'Calendar': 'calendar', 'Sharing': 'share', 'To-do list': 'tasks',
+  'Calendar': 'calendar', 'Sharing': 'share', 'To-do list': 'tasks', 'Family': 'family',
 };
 export const SEC_ICON_NAME = {
   deliveries: 'box', documents: 'doc', utilities: 'bolt', subscriptions: 'refresh',
   tax: 'money', home: 'house', health: 'heart', loyalty: 'card', sharing: 'share', shopping: 'cart',
-  bills: 'split', tasks: 'tasks', calendar: 'calendar',
+  bills: 'split', tasks: 'tasks', calendar: 'calendar', family: 'family',
 };
