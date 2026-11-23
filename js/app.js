@@ -16,6 +16,7 @@ import { CARRIER_NAMES, trackingUrl, parcelStatus, parseShared } from './deliver
 import { biometricAvailable, biometricConfigured, enableBiometric, unlockBiometric, disableBiometric } from './biometric.js';
 import { generateHouseholdCode, normalizeCode, householdId } from './household.js';
 import { parseICS, expandEvents } from './ical.js';
+import { makeVerifier, checkVerifier } from './lost.js';
 import { syncShared } from './sync.js';
 import { savePhoto, loadPhoto, deletePhoto, exportAllPhotos, importAllPhotos } from './photos.js';
 import { parseImport, importCount } from './import.js';
@@ -2029,6 +2030,7 @@ function refreshPairUI() {
   $('pair-active').hidden = !isPaired;
   if (isPaired) $('pair-code-show').textContent = s.householdCode;
   if (s.syncUrl) $('sync-url').value = s.syncUrl;
+  renderLost();
   renderShared(); // the list works locally whether or not sharing is on
 }
 const persistSyncUrl = debounce((v) => saveSettings({ syncUrl: v }), 600);
@@ -2064,6 +2066,7 @@ $('btn-pair-leave').addEventListener('click', () => {
   if (!confirm('Leave the shared space on this phone? Your partner keeps theirs, and you can rejoin with the code.')) return;
   saveSettings({ householdCode: '' });
   store.save(SHARED_KEY, {});
+  updateLostCheck();
   refreshPairUI();
 });
 $('btn-sync').addEventListener('click', () => syncNow());
@@ -2103,8 +2106,10 @@ function syncNow() {
       if (dedupeShared() || localNewer) scheduleSync();
       renderSharedAll();
       setStatus('sync-status', 'Synced ' + new Date().toLocaleTimeString());
+      updateLostCheck();
     } catch (e) {
       setStatus('sync-status', 'Could not sync (offline, or check the server address).', true);
+      if (/410/.test(e.message)) checkLostStatus(true);
       log('info', 'Sync failed: ' + e.message);
     }
   })().finally(() => { syncPromise = null; });
@@ -2144,7 +2149,7 @@ function peopleOptions(sel, includeAnyone) {
   for (const n of [myName(), partnerName()]) sel.add(new Option(n, n));
   if (keep) sel.value = keep;
 }
-function renderSharedAll() { renderShared(); renderBills(); renderTasks(); renderDeliveries(); renderUtilities(); renderCalendar(); renderHome(); }
+function renderSharedAll() { renderShared(); renderBills(); renderTasks(); renderDeliveries(); renderUtilities(); renderCalendar(); renderHome(); renderLost(); }
 
 // Shared bills with who-owes-whom
 function renderBills() {
@@ -2481,7 +2486,10 @@ function showLockScreen() {
   $('lock-error').textContent = '';
   $('lock-pass2').hidden = !setupMode;
   $('lock-reset').hidden = setupMode;
-  $('lock-intro').textContent = setupMode
+ const wiped = new URLSearchParams(location.search).has('wiped');
+  $('lock-intro').textContent = wiped && setupMode
+    ? 'Evergreen was erased on this phone because it was reported lost. If it is yours and you have it back, set a passphrase, then rejoin your shared space with the new code from your partner.'
+    : setupMode
     ? 'Set a passphrase to protect everything you store here. It never leaves this phone, and it can\'t be recovered if you forget it — so make it memorable.'
     : 'Enter your passphrase to unlock your data.';
   $('lock-submit').textContent = setupMode ? 'Create my vault' : 'Unlock';
@@ -2498,7 +2506,8 @@ async function tryBiometricUnlock() {
     const passphrase = await unlockBiometric();
     await vault.unlock(passphrase);
     $('lock-screen').hidden = true;
-    initAll();
+    await initAll();
+    ensureDeviceProtection(passphrase);
   } catch (e) {
     $('lock-error').textContent = /failed|not set up/i.test(e.message) ? '' : e.message;
     $('lock-pass').focus();
@@ -2537,6 +2546,7 @@ async function onUnlockSubmit(e) {
   $('lock-screen').hidden = true;
   await initAll();
   offerBiometric(pass);
+  ensureDeviceProtection(pass);
 }
 
 function lockApp() {
@@ -2661,6 +2671,7 @@ $('btn-change-pass').addEventListener('click', async () => {
   // Re-key by setting up a fresh vault with the current data.
   await vault.setup(pass, vault.data);
   disableBiometric(); // the stored wrapped passphrase is now stale
+  ensureDeviceProtection(pass, true); // lost-phone check uses the new passphrase
   refreshBiometricButtons();
   setStatus('security-status', 'Passphrase changed. Save a fresh backup, and re-enable fingerprint unlock if you use it.');
 });
@@ -2842,9 +2853,174 @@ $('btn-cal-disconnect').addEventListener('click', () => {
 const persistCalHide = debounce((v) => { saveSettings({ calHide: v }); pullCalendar(true).catch(() => {}); }, 900);
 $('cal-hide').addEventListener('input', (e) => persistCalHide(e.target.value));
 
+// ---------- lost-phone protection ----------
+// Each phone registers itself in the shared space with a one-way verifier of
+// its owner's passphrase. The other phone can then report it lost — only with
+// that owner's passphrase — which retires the old shared space on the server
+// (deleting its data), moves your shared data to a new code, and flags the
+// lost phone so Evergreen erases itself the next time it's opened online.
+const DEVICE_KEY = 'evergreen-device';
+const LOSTCHECK_KEY = 'evergreen-lostcheck';
+function deviceId() {
+  let d = null;
+  try { d = localStorage.getItem(DEVICE_KEY); } catch { /* ignore */ }
+  if (!d) {
+    d = 'd' + fnv(String(Math.random()) + Date.now()) + fnv(String(Math.random()) + performance.now());
+    try { localStorage.setItem(DEVICE_KEY, d); } catch { /* ignore */ }
+  }
+  return d;
+}
+const myDeviceRecordId = () => 'dev-' + deviceId();
+const ownerLabel = () => (settings().myName || '').trim() || 'Unnamed';
+async function ensureDeviceProtection(pass, force = false) {
+  if (!paired() || !pass) return;
+  const id = myDeviceRecordId();
+  const rec = sharedItems('device').find((d) => d.id === id);
+  if (rec && settings().devVerSet && !force) {
+    if (rec.owner !== ownerLabel()) { sharedUpdate(id, { owner: ownerLabel() }); scheduleSync(); renderLost(); }
+    return;
+  }
+  const verifier = await makeVerifier(pass);
+  sharedSet({ id, type: 'device', dev: deviceId(), owner: ownerLabel(), verifier, updatedAt: now(), deleted: false });
+  saveSettings({ devVerSet: true });
+  scheduleSync();
+  renderLost();
+}
+// Remember (outside the encrypted vault) where to ask "has this phone been reported lost?",
+// so the check can run on the lock screen, before anyone unlocks.
+async function updateLostCheck() {
+  try {
+    const s = settings();
+    if (!paired()) { localStorage.removeItem(LOSTCHECK_KEY); return; }
+    localStorage.setItem(LOSTCHECK_KEY, JSON.stringify({ u: s.syncUrl.replace(/\/+$/, ''), h: await householdId(s.householdCode), d: deviceId() }));
+  } catch { /* ignore */ }
+}
+let lostChecked = 0;
+async function checkLostStatus(force = false) {
+  if (!force && Date.now() - lostChecked < 60 * 1000) return;
+  lostChecked = Date.now();
+  let c = null;
+  try { c = JSON.parse(localStorage.getItem(LOSTCHECK_KEY) || 'null'); } catch { /* ignore */ }
+  if (!c || !c.u || !c.h) return;
+  try {
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), 8000);
+    const r = await fetch(`${c.u}/status?h=${c.h}&d=${encodeURIComponent(c.d || '')}`, { cache: 'no-store', signal: ctl.signal });
+    clearTimeout(timer);
+    if (!r.ok) return;
+    const st = await r.json();
+    if (st.retired && st.wipe) wipeThisPhone();
+    else if (st.retired && !vault.locked) setStatus('sync-status', 'Your shared space was reset by your partner — ask them for the new code and join again.', true);
+  } catch { /* offline — try again next time */ }
+}
+function wipeThisPhone() {
+  try { vault.destroy(); } catch { /* ignore */ }
+  try { indexedDB.deleteDatabase('evergreen-media'); } catch { /* ignore */ }
+  try { localStorage.clear(); } catch { /* ignore */ }
+  location.replace(location.pathname + '?wiped=1');
+}
+async function reportLost(d) {
+  const s = settings();
+  const oldHid = await householdId(s.householdCode);
+  const r = await fetch(`${s.syncUrl.replace(/\/+$/, '')}/retire?h=${oldHid}`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ wipe: [d.dev] }),
+  });
+  if (!r.ok) { let m = ''; try { m = (await r.json()).error; } catch { /* not json */ } throw new Error(m || `the server returned ${r.status}`); }
+  // The lost phone's record and its calendar events go; your data moves to a fresh space with a new code.
+  sharedRemove(d.id);
+  for (const e of sharedItems('event')) if (e.src && e.who && e.who === d.owner) sharedRemove(e.id);
+  const code = generateHouseholdCode();
+  saveSettings({ householdCode: code });
+  refreshPairUI();
+  await syncNow();
+  await updateLostCheck();
+  return code;
+}
+const lostTries = { count: 0, until: 0 };
+function openReportLost(d) {
+  const pass = el('input', { type: 'password', autocomplete: 'off', placeholder: `${d.owner}'s Evergreen passphrase` });
+  const msg = el('p', { class: 'status', role: 'status' });
+  const go = el('button', { class: 'danger', text: 'Lock out & erase' });
+  const cancel = el('button', { text: 'Cancel' });
+  cancel.addEventListener('click', closeSheet);
+  go.addEventListener('click', async () => {
+    msg.classList.remove('error');
+    if (Date.now() < lostTries.until) { msg.textContent = `Too many wrong tries — wait ${Math.ceil((lostTries.until - Date.now()) / 60000)} min.`; msg.classList.add('error'); return; }
+    if (!pass.value) { pass.focus(); return; }
+    go.disabled = true; cancel.disabled = true;
+    msg.textContent = 'Checking the passphrase…';
+    try {
+      if (!(await checkVerifier(pass.value, d.verifier))) {
+        lostTries.count++;
+        if (lostTries.count >= 5) { lostTries.until = Date.now() + 15 * 60000; lostTries.count = 0; }
+        msg.textContent = `That's not ${d.owner}'s passphrase.`; msg.classList.add('error');
+        return;
+      }
+      lostTries.count = 0;
+      msg.textContent = 'Locking it out…';
+      const code = await reportLost(d);
+      haptic();
+      openSheet(el('div', { class: 'sheet-icon', text: '🔒' }), el('h2', { text: `${d.owner}'s phone is locked out` }),
+        el('p', { text: `It can no longer see your shared lists, calendar or bills, and the old copy has been deleted from your server. The next time Evergreen is opened on that phone with signal, it erases itself.` }),
+        el('p', { class: 'muted', text: `Your shared space now has a new code. When ${d.owner} has a phone again, install Evergreen, then Sharing & sync → Join with a code:` }),
+        el('div', { class: 'loyal-number', text: code }),
+        el('div', { class: 'row' }, (() => { const b = el('button', { class: 'primary', text: 'Done' }); b.addEventListener('click', closeSheet); return b; })()));
+      renderLost();
+    } catch (e) {
+      msg.textContent = `Couldn't do that: ${e.message}. Check you're online and try again.`; msg.classList.add('error');
+    } finally {
+      go.disabled = false; cancel.disabled = false;
+    }
+  });
+  openSheet(el('div', { class: 'sheet-icon', text: '📵' }), el('h2', { text: `Is ${d.owner}'s phone lost or stolen?` }),
+    el('ul', { class: 'small' },
+      el('li', { text: 'It is cut off from your shared lists, calendar, bills and meters straight away.' }),
+      el('li', { text: 'The next time Evergreen is opened on it with signal — even on the lock screen — it erases itself.' }),
+      el('li', { text: "You get a new sharing code to set them up again. This can't be undone." })),
+    el('label', { class: 'field' }, `To confirm, enter ${d.owner}'s Evergreen passphrase`, pass), msg,
+    el('div', { class: 'row' }, cancel, go));
+  setTimeout(() => pass.focus(), 60);
+}
+function openProtectThisPhone() {
+  const pass = el('input', { type: 'password', autocomplete: 'current-password', placeholder: 'Your Evergreen passphrase' });
+  const msg = el('p', { class: 'status', role: 'status' });
+  const ok = el('button', { class: 'primary', text: 'Protect this phone' });
+  ok.addEventListener('click', async () => {
+    if (!(await vault.verify(pass.value))) { msg.textContent = 'Wrong passphrase.'; msg.classList.add('error'); return; }
+    msg.classList.remove('error'); msg.textContent = 'Setting up…'; ok.disabled = true;
+    await ensureDeviceProtection(pass.value, true);
+    closeSheet(); toast('This phone is protected ✓');
+  });
+  openSheet(el('h2', { text: 'Protect this phone' }),
+    el('p', { class: 'muted', text: 'Confirm your passphrase so your partner can lock this phone out if it is ever lost — but only by entering your passphrase.' }),
+    el('label', { class: 'field' }, 'Your passphrase', pass), msg, el('div', { class: 'row' }, ok));
+  setTimeout(() => pass.focus(), 60);
+}
+function renderLost() {
+  const box = $('lost-list');
+  if (!box) return;
+  box.replaceChildren();
+  const mineId = myDeviceRecordId();
+  const devices = sharedItems('device');
+  const mine = devices.find((d) => d.id === mineId);
+  const rows = el('ul', { class: 'list' });
+  const meRow = el('div', { class: 'line' }, el('div', {}, el('div', { class: 'name', text: 'This phone' }),
+    el('div', { class: 'sub', text: mine ? 'Protected ✓' : 'Not protected yet' })));
+  if (!mine) { const b = el('button', { text: 'Protect it' }); b.addEventListener('click', openProtectThisPhone); meRow.append(b); }
+  rows.append(el('li', {}, meRow));
+  const others = devices.filter((d) => d.id !== mineId);
+  for (const d of others) {
+    const b = el('button', { class: 'danger', text: 'Report lost' });
+    b.addEventListener('click', () => openReportLost(d));
+    rows.append(el('li', {}, el('div', { class: 'line' }, el('div', {}, el('div', { class: 'name', text: `${d.owner}'s phone` }), el('div', { class: 'sub', text: 'Protected ✓' })), b)));
+  }
+  box.append(rows);
+  if (!others.length) box.append(el('p', { class: 'muted small', text: "Your partner's phone appears here after they unlock Evergreen on it once." }));
+}
+
 // ---------- app updates ----------
 // Must match CACHE in sw.js (a test checks this).
-const APP_VERSION = 'evergreen-v47';
+const APP_VERSION = 'evergreen-v48';
 let updateReady = false;
 async function checkForUpdate(manual = false) {
   try {
@@ -2960,6 +3136,8 @@ try {
 
 initLifeNav();
 showLockScreen();
+checkLostStatus(true); // runs on the lock screen too, before anyone unlocks
+document.addEventListener('visibilitychange', () => { if (!document.hidden) checkLostStatus(); });
 if ('serviceWorker' in navigator && location.protocol === 'https:') {
   navigator.serviceWorker.register('sw.js').catch(() => {});
 }

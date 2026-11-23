@@ -34,8 +34,37 @@ export default {
       return new Response(await res.text(), { headers: { 'Content-Type': 'text/calendar; charset=utf-8', 'Cache-Control': 'no-store', ...CORS } });
     }
 
+    // Lost-phone protection.
+    // GET  /status?h=<household>&d=<device>  -> is this space retired, and should this phone wipe itself?
+    // POST /retire?h=<household>  {wipe:[device ids]}  -> delete the shared data and flag the lost phone(s).
+    const route = url.pathname.replace(/\/+$/, '');
+    if (route.endsWith('/status') || route.endsWith('/retire')) {
+      const hid = url.searchParams.get('h') || '';
+      if (!/^[a-f0-9]{16,64}$/.test(hid)) return json({ error: 'bad id' }, 400);
+      const retired = await env.HOUSEHOLD.get('retired:' + hid);
+      if (request.method === 'GET' && route.endsWith('/status')) {
+        if (!retired) return json({ retired: false });
+        const device = url.searchParams.get('d') || '';
+        return json({ retired: true, wipe: (JSON.parse(retired).wipe || []).includes(device) });
+      }
+      if (request.method === 'POST' && route.endsWith('/retire')) {
+        if (!retired && !(await env.HOUSEHOLD.get(hid))) return json({ error: 'unknown household' }, 404);
+        let body;
+        try { body = await request.json(); } catch { return json({ error: 'bad body' }, 400); }
+        const wipe = Array.isArray(body.wipe) ? body.wipe : [];
+        if (!wipe.length || wipe.length > 10 || !wipe.every((d) => typeof d === 'string' && /^[a-z0-9]{6,40}$/.test(d))) return json({ error: 'bad device list' }, 400);
+        const prev = retired ? JSON.parse(retired).wipe || [] : [];
+        await env.HOUSEHOLD.put('retired:' + hid, JSON.stringify({ at: Date.now(), wipe: [...new Set([...prev, ...wipe])] }));
+        await env.HOUSEHOLD.delete(hid);
+        return json({ ok: true });
+      }
+      return json({ error: 'method not allowed' }, 405);
+    }
+
     const id = url.pathname.split('/').filter(Boolean).pop() || '';
     if (!/^[a-f0-9]{16,64}$/.test(id)) return json({ error: 'bad id' }, 400);
+    // A space retired after a lost phone can't be read or written again.
+    if (await env.HOUSEHOLD.get('retired:' + id)) return json({ error: 'retired' }, 410);
 
     if (request.method === 'GET') {
       const stored = await env.HOUSEHOLD.get(id);
