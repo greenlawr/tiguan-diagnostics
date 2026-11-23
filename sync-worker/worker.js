@@ -6,13 +6,15 @@
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, X-Evergreen-Token',
 };
 const json = (obj, status = 200) => new Response(JSON.stringify(obj), { status, headers: { 'Content-Type': 'application/json', ...CORS } });
 
 const TOMBSTONE_MS = 60 * 86400000; // deleted-item markers are kept 60 days, then dropped
 const MAX_CLOCK_AHEAD_MS = 2 * 60000; // a phone's clock can't put an item further in the future than this
+const MAX_BLOB_BYTES = 12 * 1024 * 1024; // one encrypted file (the app caps files at 10 MB before encryption)
+const MAX_HOUSEHOLD_BLOB_BYTES = 250 * 1024 * 1024; // all of a household's files together
 
 async function sha256hex(text) {
   const d = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
@@ -67,6 +69,71 @@ async function motLookup(env, reg) {
   } catch (e) { return { configured: true, error: e.message || 'MOT history could not be reached' }; }
 }
 
+// ---------- Shared files (encrypted blobs) ----------
+// Phones encrypt each file before upload; the server only sees random ids and
+// ciphertext — never names, types or contents. A small index of ids and a byte
+// total are kept per household so space can be capped and retired spaces cleaned up.
+async function blobIndex(env, hid) {
+  try { return JSON.parse((await env.HOUSEHOLD.get('blobindex:' + hid)) || '[]'); } catch { return []; }
+}
+async function blobUsed(env, hid) {
+  return Number(await env.HOUSEHOLD.get('blobquota:' + hid)) || 0;
+}
+async function deleteAllBlobs(env, hid) {
+  for (const id of await blobIndex(env, hid)) await env.HOUSEHOLD.delete(`blob:${hid}:${id}`);
+  await env.HOUSEHOLD.delete('blobindex:' + hid);
+  await env.HOUSEHOLD.delete('blobquota:' + hid);
+}
+async function handleBlob(request, env, url) {
+  const hid = url.searchParams.get('h') || '';
+  const id = url.searchParams.get('id') || '';
+  if (!/^[a-f0-9]{16,64}$/.test(hid)) return json({ error: 'bad id' }, 400);
+  if (!/^[a-z0-9]{8,40}$/.test(id)) return json({ error: 'bad file id' }, 400);
+  if (await env.HOUSEHOLD.get('retired:' + hid)) return json({ error: 'retired' }, 410);
+  if (!(await env.HOUSEHOLD.get(hid))) return json({ error: 'unknown household — sync once first' }, 403);
+  if (!(await authorised(request, env, hid))) return json({ error: 'not allowed' }, 401);
+  const key = `blob:${hid}:${id}`;
+
+  if (request.method === 'GET') {
+    const bytes = await env.HOUSEHOLD.get(key, 'arrayBuffer');
+    if (!bytes) return json({ error: 'not found' }, 404);
+    return new Response(bytes, { headers: { 'Content-Type': 'application/octet-stream', 'Cache-Control': 'no-store', ...CORS } });
+  }
+
+  if (request.method === 'PUT') {
+    const declared = Number(request.headers.get('Content-Length') || 0);
+    if (declared > MAX_BLOB_BYTES) return json({ error: 'file too large (max 12 MB)' }, 413);
+    const bytes = await request.arrayBuffer();
+    if (!bytes.byteLength) return json({ error: 'empty file' }, 400);
+    if (bytes.byteLength > MAX_BLOB_BYTES) return json({ error: 'file too large (max 12 MB)' }, 413);
+    const index = await blobIndex(env, hid);
+    let previous = 0;
+    if (index.includes(id)) {
+      const old = await env.HOUSEHOLD.get(key, 'arrayBuffer');
+      previous = old ? old.byteLength : 0;
+    }
+    const used = Math.max(0, (await blobUsed(env, hid)) - previous) + bytes.byteLength;
+    if (used > MAX_HOUSEHOLD_BLOB_BYTES) return json({ error: 'shared file space is full (250 MB per household) — delete some files first', used: used - bytes.byteLength, limit: MAX_HOUSEHOLD_BLOB_BYTES }, 413);
+    await env.HOUSEHOLD.put(key, bytes);
+    if (!index.includes(id)) await env.HOUSEHOLD.put('blobindex:' + hid, JSON.stringify([...index, id]));
+    await env.HOUSEHOLD.put('blobquota:' + hid, String(used));
+    return json({ ok: true, id, size: bytes.byteLength, used, limit: MAX_HOUSEHOLD_BLOB_BYTES });
+  }
+
+  if (request.method === 'DELETE') {
+    const index = await blobIndex(env, hid);
+    const old = await env.HOUSEHOLD.get(key, 'arrayBuffer');
+    if (old) {
+      await env.HOUSEHOLD.delete(key);
+      await env.HOUSEHOLD.put('blobquota:' + hid, String(Math.max(0, (await blobUsed(env, hid)) - old.byteLength)));
+    }
+    if (index.includes(id)) await env.HOUSEHOLD.put('blobindex:' + hid, JSON.stringify(index.filter((x) => x !== id)));
+    return json({ ok: true, deleted: Boolean(old) });
+  }
+
+  return json({ error: 'method not allowed' }, 405);
+}
+
 export default {
   async fetch(request, env) {
     if (request.method === 'OPTIONS') return new Response(null, { headers: CORS });
@@ -102,6 +169,9 @@ export default {
       return json({ reg, dvla, mot });
     }
 
+    // Shared encrypted files: PUT / GET / DELETE /blob?h=<household>&id=<file id>
+    if (url.pathname.replace(/\/+$/, '').endsWith('/blob')) return handleBlob(request, env, url);
+
     // Lost-phone protection.
     // GET  /status?h=<household>&d=<device>  -> is this space retired, and should this phone wipe itself?
     // POST /retire?h=<household>  {wipe:[device ids]}  -> delete the shared data and flag the lost phone(s).
@@ -126,6 +196,7 @@ export default {
         await env.HOUSEHOLD.put('retired:' + hid, JSON.stringify({ at: Date.now(), wipe: [...new Set([...prev, ...wipe])] }));
         await env.HOUSEHOLD.delete(hid);
         await env.HOUSEHOLD.delete('auth:' + hid);
+        await deleteAllBlobs(env, hid);
         return json({ ok: true });
       }
       return json({ error: 'method not allowed' }, 405);
