@@ -10,6 +10,7 @@ import { diagnoseAppConnect, dealerSummary, CHECKLIST } from './appconnect.js';
 import { Trip, fuelRateFrom5E, fuelRateFromMaf, mpgUk } from './trip.js';
 import { calendarUrl, cleanReg, GOV_MOT_HISTORY, GOV_TAX_CHECK } from './vehicle.js';
 import { fuelStats, renewals, countdown, parkMapsUrl, timeAgo, mileageSummary, mileageExport } from './garage.js';
+import { Vault } from './vault.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -30,6 +31,18 @@ let busy = false;
 let liveRunning = false;
 let supportedPids = null;
 const logLines = [];
+
+// Encrypted on-device store. Every collection below lives inside the vault, so
+// it is only readable after the user unlocks with their passphrase.
+const vault = new Vault();
+const store = {
+  load(key, fallback) {
+    return vault.get(key, fallback);
+  },
+  save(key, value) {
+    vault.set(key, value).catch((e) => log('info', 'Save failed: ' + e.message));
+  },
+};
 
 // ---------- technical log ----------
 function log(direction, text) {
@@ -324,19 +337,9 @@ function renderReport(r, { past = false, previous = null } = {}) {
 
 // ---------- saved checks (on this phone only) ----------
 const HISTORY_KEY = 'tiguan-checks';
-function loadHistory() {
-  try {
-    return JSON.parse(localStorage.getItem(HISTORY_KEY)) || [];
-  } catch {
-    return [];
-  }
-}
+const loadHistory = () => store.load(HISTORY_KEY, []);
 function saveReport(report) {
-  try {
-    localStorage.setItem(HISTORY_KEY, JSON.stringify([report, ...loadHistory()].slice(0, 12)));
-  } catch {
-    /* storage unavailable; the report is still shown */
-  }
+  store.save(HISTORY_KEY, [report, ...loadHistory()].slice(0, 12));
 }
 function renderHistory() {
   const items = loadHistory();
@@ -686,19 +689,9 @@ $('btn-trip').addEventListener('click', async () => {
 });
 
 const TRIPS_KEY = 'tiguan-trips';
-const loadTrips = () => {
-  try {
-    return JSON.parse(localStorage.getItem(TRIPS_KEY)) || [];
-  } catch {
-    return [];
-  }
-};
+const loadTrips = () => store.load(TRIPS_KEY, []);
 function saveTrip(summary) {
-  try {
-    localStorage.setItem(TRIPS_KEY, JSON.stringify([summary, ...loadTrips()].slice(0, 30)));
-  } catch {
-    /* storage unavailable */
-  }
+  store.save(TRIPS_KEY, [summary, ...loadTrips()].slice(0, 30));
 }
 function renderTrips() {
   const trips = loadTrips();
@@ -713,22 +706,6 @@ function renderTrips() {
 }
 
 // ---------- car hub: shared storage ----------
-const store = {
-  load(key, fallback) {
-    try {
-      return JSON.parse(localStorage.getItem(key)) ?? fallback;
-    } catch {
-      return fallback;
-    }
-  },
-  save(key, value) {
-    try {
-      localStorage.setItem(key, JSON.stringify(value));
-    } catch {
-      /* storage unavailable */
-    }
-  },
-};
 const VEHICLE_KEY = 'tiguan-vehicle';
 const FUEL_KEY = 'tiguan-fuel';
 const SERVICE_KEY = 'tiguan-service';
@@ -1050,23 +1027,160 @@ $('btn-clear-log').addEventListener('click', () => {
   renderLog();
 });
 
+// ---------- lock / unlock / backup ----------
+// Collections migrated from the old unencrypted storage into the vault on first setup.
+const MIGRATE_KEYS = ['tiguan-checks', 'tiguan-trips', 'tiguan-vehicle', 'tiguan-fuel', 'tiguan-service', 'tiguan-mileage', 'tiguan-park', 'tiguan-docs'];
+
+function collectLegacyData() {
+  const seed = {};
+  for (const key of MIGRATE_KEYS) {
+    try {
+      const raw = localStorage.getItem(key);
+      if (raw != null) seed[key] = JSON.parse(raw);
+    } catch {
+      /* ignore unreadable legacy value */
+    }
+  }
+  return seed;
+}
+function clearLegacyData() {
+  for (const key of MIGRATE_KEYS) {
+    try {
+      localStorage.removeItem(key);
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+let setupMode = false;
+function showLockScreen() {
+  setupMode = !vault.exists();
+  $('lock-pass').value = '';
+  $('lock-pass2').value = '';
+  $('lock-error').textContent = '';
+  $('lock-pass2').hidden = !setupMode;
+  $('lock-reset').hidden = setupMode;
+  $('lock-intro').textContent = setupMode
+    ? 'Set a passphrase to protect everything you store here. It never leaves this phone, and it can\'t be recovered if you forget it — so make it memorable.'
+    : 'Enter your passphrase to unlock your data.';
+  $('lock-submit').textContent = setupMode ? 'Create my vault' : 'Unlock';
+  $('lock-screen').hidden = false;
+  $('lock-pass').focus();
+}
+
+async function onUnlockSubmit(e) {
+  e.preventDefault();
+  const pass = $('lock-pass').value;
+  const err = $('lock-error');
+  err.textContent = '';
+  if (setupMode) {
+    if (pass.length < 6) return (err.textContent = 'Use at least 6 characters.');
+    if (pass !== $('lock-pass2').value) return (err.textContent = 'The two passphrases do not match.');
+    $('lock-submit').disabled = true;
+    try {
+      await vault.setup(pass, collectLegacyData());
+      clearLegacyData();
+    } finally {
+      $('lock-submit').disabled = false;
+    }
+  } else {
+    $('lock-submit').disabled = true;
+    try {
+      await vault.unlock(pass);
+    } catch {
+      $('lock-submit').disabled = false;
+      err.textContent = 'Wrong passphrase. Try again.';
+      return;
+    }
+    $('lock-submit').disabled = false;
+  }
+  $('lock-screen').hidden = true;
+  initAll();
+}
+
+function lockApp() {
+  vault.lock();
+  stopLive();
+  stopTrip(false);
+  if (elm) {
+    const cur = elm;
+    handleDisconnect('Locked.');
+    cur.close().catch(() => {});
+  }
+  showLockScreen();
+}
+
+$('lock-form').addEventListener('submit', onUnlockSubmit);
+$('btn-lock').addEventListener('click', lockApp);
+$('lock-reset').addEventListener('click', () => {
+  if (!confirm('Forgotten your passphrase?\n\nThere is no way to recover the data without it. You can wipe everything and start fresh. This cannot be undone.')) return;
+  if (!confirm('Really erase all stored data on this phone?')) return;
+  vault.destroy();
+  showLockScreen();
+});
+
+// Security card actions
+$('btn-lock2').addEventListener('click', lockApp);
+$('btn-backup').addEventListener('click', () => {
+  const blob = vault.backupBlob();
+  if (!blob) return;
+  const url = URL.createObjectURL(new Blob([JSON.stringify(blob)], { type: 'application/json' }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `my-life-backup-${new Date().toISOString().slice(0, 10)}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+  setStatus('security-status', 'Backup saved. Keep it somewhere safe — it needs your passphrase to open.');
+});
+$('btn-restore').addEventListener('click', () => $('restore-file').click());
+$('restore-file').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const pass = prompt('Enter the passphrase for that backup:');
+  if (!pass) return;
+  try {
+    const blob = JSON.parse(await file.text());
+    await vault.restore(blob, pass);
+    initAll();
+    setStatus('security-status', 'Backup restored.');
+  } catch {
+    setStatus('security-status', 'Could not restore — wrong passphrase or not a valid backup file.', true);
+  } finally {
+    e.target.value = '';
+  }
+});
+$('btn-change-pass').addEventListener('click', async () => {
+  const pass = prompt('New passphrase (at least 6 characters):');
+  if (pass == null) return;
+  if (pass.length < 6) return setStatus('security-status', 'Passphrase too short.', true);
+  if (prompt('Confirm the new passphrase:') !== pass) return setStatus('security-status', 'Passphrases did not match.', true);
+  // Re-key by setting up a fresh vault with the current data.
+  await vault.setup(pass, vault.data);
+  setStatus('security-status', 'Passphrase changed. Save a fresh backup.');
+});
+
 // ---------- startup ----------
-setConnected(false);
-renderHistory();
-renderTrips();
-initCarTab();
-renderDocs();
+function initAll() {
+  setConnected(false);
+  renderHistory();
+  renderTrips();
+  initCarTab();
+  renderDocs();
+  if (!bluetoothSupported()) {
+    $('unsupported').hidden = false;
+    $('btn-connect').disabled = true;
+  } else {
+    refreshReconnect();
+  }
+}
+
 try {
   applyTextSize(localStorage.getItem(TEXT_KEY) || 'normal');
 } catch {
   applyTextSize('normal');
 }
-if (!bluetoothSupported()) {
-  $('unsupported').hidden = false;
-  $('btn-connect').disabled = true;
-} else {
-  refreshReconnect();
-}
+showLockScreen();
 if ('serviceWorker' in navigator && location.protocol === 'https:') {
   navigator.serviceWorker.register('sw.js').catch(() => {});
 }

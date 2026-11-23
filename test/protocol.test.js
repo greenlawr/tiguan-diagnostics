@@ -344,3 +344,49 @@ test('parking helpers', () => {
   assert.equal(parkMapsUrl(null), null);
   assert.equal(timeAgo(new Date(Date.now() - 90000).toISOString()), '2 min ago');
 });
+
+// ---------- encrypted vault ----------
+import { Vault, encryptJSON, decryptJSON } from '../js/vault.js';
+
+const mockStorage = () => {
+  const m = new Map();
+  return { getItem: (k) => (m.has(k) ? m.get(k) : null), setItem: (k, v) => m.set(k, v), removeItem: (k) => m.delete(k) };
+};
+
+test('vault encrypts, rejects wrong passphrase, and never stores plaintext', async () => {
+  const blob = await encryptJSON({ passport: 'GB123456', pin: 4242 }, 'correct horse');
+  assert.deepEqual(await decryptJSON(blob, 'correct horse'), { passport: 'GB123456', pin: 4242 });
+  await assert.rejects(decryptJSON(blob, 'wrong'));
+  assert.ok(!JSON.stringify(blob).includes('GB123456'));
+  assert.ok(!JSON.stringify(blob).includes('4242'));
+});
+
+test('vault: setup, lock, unlock, persistence across instances', async () => {
+  const s = mockStorage();
+  const v = new Vault(s);
+  assert.equal(v.exists(), false);
+  await v.setup('mypass', { 'tiguan-docs': [{ label: 'Passport' }] });
+  assert.equal(v.exists(), true);
+  await v.set('tiguan-fuel', [{ litres: 50 }]);
+  v.lock();
+  assert.equal(v.locked, true);
+  assert.equal(v.get('tiguan-docs', 'LOCKED'), 'LOCKED'); // unreadable while locked
+
+  const reopened = new Vault(s);
+  await assert.rejects(reopened.unlock('nope'));
+  await reopened.unlock('mypass');
+  assert.deepEqual(reopened.get('tiguan-fuel', []), [{ litres: 50 }]);
+  assert.deepEqual(reopened.get('tiguan-docs', []), [{ label: 'Passport' }]);
+});
+
+test('vault backup restores onto a clean device', async () => {
+  const s1 = mockStorage();
+  const v1 = new Vault(s1);
+  await v1.setup('pw', { 'tiguan-vehicle': { reg: 'AB17 CDE' } });
+  const backup = v1.backupBlob();
+
+  const v2 = new Vault(mockStorage());
+  await assert.rejects(v2.restore(backup, 'wrong'));
+  await v2.restore(backup, 'pw');
+  assert.deepEqual(v2.get('tiguan-vehicle', {}), { reg: 'AB17 CDE' });
+});

@@ -1,6 +1,10 @@
-# Tiguan Diagnostics
+# My Life
 
-A phone web app that talks to a 2017 VW Tiguan through a Bluetooth OBD-II adapter. No build step, no dependencies, no account, and nothing leaves your phone.
+A private, installable phone app for life admin — car, documents, reminders and more — with everything encrypted on the device. The car section talks to a 2017 VW Tiguan through a Bluetooth OBD-II adapter. No build step, no dependencies, no account, no server; nothing you store ever leaves your phone.
+
+## Security
+
+All saved data is held in an **encrypted vault**: it is written to the phone only as AES-256-GCM ciphertext, with the key derived from your passphrase (PBKDF2) and never stored. Opening the app requires the passphrase; there is no server and no recovery, so you can save an **encrypted backup file** (useless without the passphrase). The public GitHub repo contains only the app's code — never any of your data.
 
 ## What it does
 
@@ -93,6 +97,7 @@ npm start   # serve on http://localhost:8080
 | `js/report.js` | The health check, plus the change-since-last-check diff |
 | `js/trip.js` | Fuel-economy maths and trip recording |
 | `js/vehicle.js` | MOT countdown, gov.uk links, calendar reminder |
+| `js/vault.js` | Encrypted on-device vault (AES-256-GCM + PBKDF2), backup/restore |
 | `js/garage.js` | Car hub: fuel economy, renewals, mileage/HMRC reclaim, parking |
 | `js/appconnect.js` | Read-only "why isn't Android Auto working?" diagnosis |
 | `js/simulator.js` | Pretend adapter and car for the demo mode and tests |
