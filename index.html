@@ -234,6 +234,11 @@
       <div id="docs-out"></div>
 
       <h3 id="sec-utilities">Utilities</h3>
+      <div class="card" id="meters-card">
+        <h2>Meter readings</h2>
+        <p class="muted small">Add a reading whenever you check a meter or your supplier asks. Shared with your partner, so either of you can add one.</p>
+        <div id="meters"></div>
+      </div>
       <div class="card">
         <p class="muted small">Store your plans so you get a nudge before each renewal — that's when switching saves the most.</p>
         <details class="inner-form" id="util-form">
@@ -309,20 +314,6 @@
           <button id="btn-inv-add" class="primary">Add item</button>
         </details>
         <ul id="inv-list" class="list"></ul>
-      </div>
-      <div class="card">
-        <h2>Meter readings</h2>
-        <details class="inner-form" id="meter-form">
-          <summary>Add a reading</summary>
-          <div class="grid2">
-            <label class="field">Type<select id="meter-type"><option>Electricity</option><option>Gas</option><option>Water</option></select></label>
-            <label class="field">Date<input id="meter-date" type="date"></label>
-          </div>
-          <label class="field">Reading<input id="meter-reading" type="number" inputmode="decimal" placeholder="meter value"></label>
-          <button id="btn-meter-add" class="primary">Add reading</button>
-        </details>
-        <div id="meter-usage" class="status"></div>
-        <ul id="meter-list" class="list"></ul>
       </div>
       <div class="card">
         <h2>Maintenance reminders</h2>

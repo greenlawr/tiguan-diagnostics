@@ -22,6 +22,8 @@ const COLOURS = {
   share: ['#7fb2ff', '#3a4fd8'],
   split: ['#9aa2ff', '#5b3fe0'],
   tasks: ['#b9ec4d', '#4f9a0f'],
+  flame: ['#ffa45c', '#e5481f'],
+  drop: ['#5fd0ff', '#1677d6'],
 };
 
 // Symbols drawn on a 48×48 grid. `D` is replaced with the tile's dark colour.
@@ -88,6 +90,10 @@ const GLYPHS = {
     <path d="M16.5 21.5l2.1 2.1 3.6-3.8M16.5 29.5l2.1 2.1 3.6-3.8" fill="none" stroke="D" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
     <rect x="24.5" y="21" width="7.5" height="2.2" rx="1.1" fill="D" opacity=".45"/>
     <rect x="24.5" y="29" width="7.5" height="2.2" rx="1.1" fill="D" opacity=".45"/>`,
+  flame: `<path d="M24 8.5c1.6 5.2 8 8.6 8 16a8 8 0 0 1-16 0c0-3.8 1.9-6.1 3.8-8 .4 2.5 1.7 4.1 3.3 4.8C22.3 16.6 22.2 12.3 24 8.5z" fill="#fff"/>
+    <path d="M24 37.5a4 4 0 0 1-4-4c0-2.5 2.3-4 4-6.6 1.7 2.6 4 4.1 4 6.6a4 4 0 0 1-4 4z" fill="D" opacity=".55"/>`,
+  drop: `<path d="M24 9c5 6.6 10.5 12 10.5 18.2a10.5 10.5 0 0 1-21 0C13.5 21 19 15.6 24 9z" fill="#fff"/>
+    <path d="M18.6 28a5.8 5.8 0 0 0 4.4 5.5" fill="none" stroke="D" stroke-width="2.3" stroke-linecap="round" opacity=".5"/>`,
 };
 
 let seq = 0;

@@ -1111,7 +1111,7 @@ const EVENTS_KEY = 'tiguan-events';
 function renderDeliveries() {
   const sel = $('del-carrier');
   if (sel && !sel.options.length) for (const name of CARRIER_NAMES) sel.add(new Option(name, name));
-  const items = store.load(DELIVERIES_KEY, []).filter((d) => !d.done);
+  const items = sharedItems('delivery').filter((d) => !d.done);
   const list = $('del-list');
   list.replaceChildren();
   const withStatus = items.map((d) => ({ d, s: parcelStatus(d.expected) }));
@@ -1127,10 +1127,10 @@ function renderDeliveries() {
     track.style.flex = '1';
     const arrived = el('button', { text: 'Arrived' });
     arrived.addEventListener('click', () => {
-      const all = store.load(DELIVERIES_KEY, []).map((x) => (x.id === d.id ? { ...x, done: true } : x));
-      store.save(DELIVERIES_KEY, all);
+      sharedRemove(d.id);
       renderDeliveries();
       renderDashboard();
+      scheduleSync();
     });
     actions.append(track, arrived);
     row.append(actions);
@@ -1145,8 +1145,8 @@ $('btn-del-add').addEventListener('click', () => {
     alert('Add at least a name or a tracking number.');
     return;
   }
-  const entry = { id: Date.now(), item, carrier: $('del-carrier').value, tracking, expected: $('del-expected').value, done: false };
-  store.save(DELIVERIES_KEY, [entry, ...store.load(DELIVERIES_KEY, [])]);
+  sharedAdd('delivery', { item, carrier: $('del-carrier').value, tracking, expected: $('del-expected').value, done: false });
+  scheduleSync();
   for (const id of ['del-item', 'del-tracking', 'del-expected']) $(id).value = '';
   renderDeliveries();
   renderDashboard();
@@ -1160,7 +1160,7 @@ function greeting() {
 
 function isAppEmpty() {
   const v = loadVehicle();
-  const anyList = [DOCS_KEY, UTIL_KEY, SUBS_KEY, DELIVERIES_KEY, LOYAL_KEY, MAINT_KEY, CHECK_KEY, INV_KEY].some((k) => store.load(k, []).length);
+  const anyList = [DOCS_KEY, UTIL_KEY, SUBS_KEY, LOYAL_KEY, MAINT_KEY, CHECK_KEY, INV_KEY].some((k) => store.load(k, []).length);
   const anyShopping = Object.values(store.load(SHARED_KEY, {})).some((i) => !i.deleted);
   return !anyList && !anyShopping && !v.reg && !v.mot;
 }
@@ -1187,7 +1187,7 @@ const HOME_TILES = [
   { icon: '💷', label: 'Money & tax', go: () => goLife('tax') },
   { icon: '🏠', label: 'Home', go: () => goLife('home') },
   { icon: '❤️', label: 'Health', go: () => goLife('health') },
-  { icon: '📦', label: 'Deliveries', go: () => goLife('deliveries'), badge: () => { const n = store.load(DELIVERIES_KEY, []).filter((d) => !d.done).length; return n ? { text: String(n), cls: 'minor' } : null; } },
+  { icon: '📦', label: 'Deliveries', go: () => goLife('deliveries'), badge: () => { const n = sharedItems('delivery').filter((d) => !d.done).length; return n ? { text: String(n), cls: 'minor' } : null; } },
   { icon: '💳', label: 'Loyalty', go: () => goLife('loyalty') },
   { icon: '⛽', label: 'Trips', go: () => showTab('trips') },
   { icon: '⚙️', label: 'Settings', go: () => showTab('help') },
@@ -1220,7 +1220,7 @@ function eventStart(e) {
 function upcomingEvents(days = 7) {
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const horizon = new Date(today); horizon.setDate(horizon.getDate() + days + 1);
-  const rows = store.load(EVENTS_KEY, []).filter((e) => {
+  const rows = sharedItems('event').filter((e) => {
     if (!e.date) return false;
     const d = new Date(e.date + 'T00:00:00');
     return !isNaN(d) && d >= today && d < horizon;
@@ -1230,10 +1230,13 @@ function upcomingEvents(days = 7) {
 }
 /** Drop events whose day has passed, so the store doesn't grow forever. */
 function pruneEvents() {
-  const all = store.load(EVENTS_KEY, []);
   const today = new Date(); today.setHours(0, 0, 0, 0);
-  const kept = all.filter((e) => { if (!e.date) return true; const d = new Date(e.date + 'T00:00:00'); return !isNaN(d) && d >= today; });
-  if (kept.length !== all.length) store.save(EVENTS_KEY, kept);
+  let removed = 0;
+  for (const e of sharedItems('event')) {
+    const d = new Date((e.date || '') + 'T00:00:00');
+    if (e.date && !isNaN(d) && d < today) { sharedRemove(e.id); removed++; }
+  }
+  if (removed) scheduleSync();
 }
 function dayLabel(isoDate) {
   const d = new Date(isoDate + 'T00:00:00');
@@ -1268,7 +1271,7 @@ function renderDashboard() {
     renewalDates: { mot: v.mot, tax: v.tax, insurance: v.insurance, service: v.service },
     documents: store.load(DOCS_KEY, []),
   });
-  for (const d of store.load(DELIVERIES_KEY, [])) {
+  for (const d of sharedItems('delivery')) {
     if (d.done || !d.expected) continue;
     const s = parcelStatus(d.expected);
     if (s.days == null) continue;
@@ -1628,29 +1631,64 @@ $('btn-inv-add').addEventListener('click', async () => {
   } finally { btn.disabled = false; }
 });
 
-// Home: meter readings
+// Utilities: meter readings (shared, one panel per meter)
+const METERS = [
+  { kind: 'Electricity', unit: 'kWh', icon: 'bolt' },
+  { kind: 'Gas', unit: 'm³', icon: 'flame' },
+  { kind: 'Water', unit: 'm³', icon: 'drop' },
+];
+const fmtNum = (n) => Number(n).toLocaleString('en-GB', { maximumFractionDigits: 2 });
+const todayISO = () => { const d = new Date(); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10); };
 function renderMeters() {
-  const all = store.load(METER_KEY, []);
-  const byType = {};
-  for (const r of all) (byType[r.type] ||= []).push(r);
-  const u = $('meter-usage');
-  const parts = [];
-  for (const [type, rows] of Object.entries(byType)) { const m = meterUsage(rows); if (m) parts.push(`${type}: ${m.perDay.toFixed(1)}/day`); }
-  u.textContent = parts.join(' · ');
-  const list = $('meter-list');
-  list.replaceChildren();
-  for (const r of [...all].sort((a, b) => (a.date < b.date ? 1 : -1))) {
-    list.append(deletableRow(`${r.type} — ${r.reading}`, fmtDate(r.date), () => { store.save(METER_KEY, all.filter((x) => x.id !== r.id)); renderMeters(); }));
+  const box = $('meters');
+  if (!box) return;
+  box.replaceChildren();
+  const all = sharedItems('meter');
+  for (const m of METERS) {
+    const rows = all.filter((r) => r.kind === m.kind).sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : b.updatedAt - a.updatedAt));
+    const last = rows[0];
+    const usage = meterUsage(rows);
+    const panel = el('div', { class: 'meter' },
+      el('div', { class: 'meter-head' }, icon(m.icon),
+        el('div', {}, el('div', { class: 'name', text: m.kind }),
+          el('div', { class: 'sub', text: last ? `Last: ${fmtNum(last.reading)} ${m.unit} · ${fmtDate(last.date)}` : 'No readings yet' }))));
+    if (usage) panel.append(el('div', { class: 'meter-stat', text: `About ${usage.perDay.toFixed(1)} ${m.unit} a day (${fmtNum(usage.used)} ${m.unit} over ${Math.round(usage.days)} days)` }));
+    const input = el('input', { type: 'number', inputmode: 'decimal', placeholder: 'New reading', 'aria-label': `New ${m.kind.toLowerCase()} reading` });
+    const date = el('input', { type: 'date', 'aria-label': `${m.kind} reading date` });
+    date.value = todayISO();
+    const add = el('button', { class: 'primary', text: 'Add' });
+    add.addEventListener('click', () => {
+      const reading = parseFloat(input.value);
+      if (isNaN(reading)) { input.focus(); return toast('Type the number shown on the meter.'); }
+      const d = date.value || todayISO();
+      if (last && reading < last.reading && d >= last.date && !confirm(`That's lower than your last ${m.kind.toLowerCase()} reading (${fmtNum(last.reading)}). Save it anyway?`)) return;
+      sharedAdd('meter', { kind: m.kind, reading, date: d });
+      renderMeters();
+      scheduleSync();
+      haptic();
+      toast(`${m.kind} reading saved ✓`);
+    });
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') add.click(); });
+    panel.append(el('div', { class: 'row meter-add' }, input, date, add));
+    if (rows.length) {
+      const ul = el('ul', { class: 'list' });
+      for (const r of rows) ul.append(deletableRow(`${fmtNum(r.reading)} ${m.unit}`, fmtDate(r.date), () => { sharedRemove(r.id); renderMeters(); scheduleSync(); }));
+      panel.append(el('details', { class: 'inner' }, el('summary', { text: `History (${rows.length})` }), ul));
+    }
+    box.append(panel);
   }
 }
-$('btn-meter-add').addEventListener('click', () => {
-  const reading = parseFloat($('meter-reading').value);
-  if (isNaN(reading)) return alert('Please enter the reading.');
-  const entry = { id: Date.now(), type: $('meter-type').value, date: $('meter-date').value || new Date().toISOString().slice(0, 10), reading };
-  store.save(METER_KEY, [entry, ...store.load(METER_KEY, [])]);
-  $('meter-reading').value = '';
-  renderMeters();
-});
+
+// One-time move of deliveries, calendar events and meter readings into the
+// shared space, so they sync with your partner. Safe to run every start.
+function migrateToShared() {
+  const del = store.load(DELIVERIES_KEY, []), ev = store.load(EVENTS_KEY, []), met = store.load(METER_KEY, []);
+  if (!del.length && !ev.length && !met.length) return;
+  for (const d of del) if (!d.done) { const { id, ...rest } = d; sharedAdd('delivery', rest); }
+  for (const e of ev) { const { id, ...rest } = e; sharedAdd('event', rest); }
+  for (const r of met) sharedAdd('meter', { kind: r.type, reading: r.reading, date: r.date });
+  store.save(DELIVERIES_KEY, []); store.save(EVENTS_KEY, []); store.save(METER_KEY, []);
+}
 
 // Home: maintenance
 function renderMaint() {
@@ -1870,29 +1908,58 @@ function scheduleSync() {
   clearTimeout(syncTimer);
   syncTimer = setTimeout(syncNow, 1200);
 }
-let syncing = false;
-async function syncNow() {
-  if (!paired() || syncing) return;
-  syncing = true;
-  setStatus('sync-status', 'Syncing…');
-  try {
-    const s = settings();
-    const merged = await syncShared(s.syncUrl, s.householdCode, store.load(SHARED_KEY, {}));
-    store.save(SHARED_KEY, merged);
-    renderSharedAll();
-    setStatus('sync-status', 'Synced ' + new Date().toLocaleTimeString());
-  } catch (e) {
-    setStatus('sync-status', 'Could not sync (offline, or check the server address).', true);
-    log('info', 'Sync failed: ' + e.message);
-  } finally {
-    syncing = false;
+// Calls made while a sync is running share it (so callers can await it).
+let syncPromise = null;
+function syncNow() {
+  if (!paired()) return Promise.resolve();
+  if (syncPromise) return syncPromise;
+  syncPromise = (async () => {
+    setStatus('sync-status', 'Syncing…');
+    try {
+      const s = settings();
+      const merged = await syncShared(s.syncUrl, s.householdCode, store.load(SHARED_KEY, {}));
+      // Keep anything changed on this phone while the request was in flight.
+      let localNewer = false;
+      for (const [id, it] of Object.entries(store.load(SHARED_KEY, {}))) {
+        const m = merged[id];
+        if (!m || (it.updatedAt || 0) > (m.updatedAt || 0)) { merged[id] = it; localNewer = true; }
+      }
+      store.save(SHARED_KEY, merged);
+      if (dedupeShared() || localNewer) scheduleSync();
+      renderSharedAll();
+      setStatus('sync-status', 'Synced ' + new Date().toLocaleTimeString());
+    } catch (e) {
+      setStatus('sync-status', 'Could not sync (offline, or check the server address).', true);
+      log('info', 'Sync failed: ' + e.message);
+    }
+  })().finally(() => { syncPromise = null; });
+  return syncPromise;
+}
+
+// The same parcel or event can be added on both phones (e.g. both tap the
+// morning link while offline). Keep the one with the lowest id — both phones
+// pick the same one — and remove the rest.
+const deliveryKey = (d) => (d.tracking || '').trim().toLowerCase() || (d.item || '').trim().toLowerCase() + '|' + (d.expected || '');
+const eventKey = (e) => (e.date || '') + '|' + (e.title || '').trim().toLowerCase();
+function dedupeShared() {
+  let removed = 0;
+  for (const [type, keyFn] of [['delivery', deliveryKey], ['event', eventKey]]) {
+    const seen = new Set();
+    for (const it of sharedItems(type).sort((a, b) => (a.id < b.id ? -1 : 1))) {
+      const k = keyFn(it);
+      if (seen.has(k)) { sharedRemove(it.id); removed++; } else seen.add(k);
+    }
   }
+  return removed;
 }
 
 // Shared space helpers (all shared types live in SHARED_KEY, tagged by `type`).
 function sharedSet(item) { const all = store.load(SHARED_KEY, {}); all[item.id] = item; store.save(SHARED_KEY, all); }
 function sharedUpdate(id, patch) { const all = store.load(SHARED_KEY, {}); if (all[id]) { all[id] = { ...all[id], ...patch, updatedAt: now() }; store.save(SHARED_KEY, all); } }
 const sharedItems = (type) => Object.values(store.load(SHARED_KEY, {})).filter((i) => !i.deleted && (i.type || 'shop') === type);
+function sharedAdd(type, data) { const id = type.charAt(0) + uid(); sharedSet({ ...data, id, type, updatedAt: now(), deleted: false }); return id; }
+// Deleting keeps only a tiny marker, so the removal syncs without keeping the content around.
+function sharedRemove(id) { const all = store.load(SHARED_KEY, {}); if (!all[id]) return; all[id] = { id, type: all[id].type, deleted: true, updatedAt: now() }; store.save(SHARED_KEY, all); }
 const myName = () => (settings().myName || '').trim() || 'Me';
 const partnerName = () => (settings().partnerName || '').trim() || 'Partner';
 function peopleOptions(sel, includeAnyone) {
@@ -1902,7 +1969,7 @@ function peopleOptions(sel, includeAnyone) {
   for (const n of [myName(), partnerName()]) sel.add(new Option(n, n));
   if (keep) sel.value = keep;
 }
-function renderSharedAll() { renderShared(); renderBills(); renderTasks(); }
+function renderSharedAll() { renderShared(); renderBills(); renderTasks(); renderDeliveries(); renderMeters(); renderHome(); }
 
 // Shared bills with who-owes-whom
 function renderBills() {
@@ -2126,28 +2193,21 @@ function applyParsedImport(r) {
   add(SUBS_KEY, r.subscriptions, (s) => ({ id: uid(), ...s }));
   add(UTIL_KEY, r.utilities, (u) => ({ id: uid(), ...u }));
   add(DOCS_KEY, r.documents, (d) => ({ id: uid(), ...d }));
-  add(DELIVERIES_KEY, r.deliveries, (d) => ({ id: uid(), done: false, ...d }));
-  // Calendar events: dedupe against what's already stored (same date + title),
-  // so repeated morning imports never pile up duplicates.
-  if (r.events.length) {
-    snap(EVENTS_KEY, []);
-    const existing = store.load(EVENTS_KEY, []);
-    const seen = new Set(existing.map((e) => (e.date || '') + '|' + (e.title || '').trim().toLowerCase()));
-    const fresh = r.events.filter((e) => { const k = (e.date || '') + '|' + (e.title || '').trim().toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; });
-    if (fresh.length) store.save(EVENTS_KEY, [...fresh.map((e) => ({ id: uid(), ...e })), ...existing]);
-  }
+  // Deliveries and calendar events live in the shared space (so your partner
+  // sees them). Skip anything already there, so tapping the same morning link
+  // on both phones never creates duplicates.
+  const addedShared = [];
+  const addUnique = (type, rows, keyFn, extra = {}) => {
+    const seen = new Set(sharedItems(type).map(keyFn));
+    for (const row of rows) { const k = keyFn(row); if (seen.has(k)) continue; seen.add(k); addedShared.push(sharedAdd(type, { ...extra, ...row })); }
+  };
+  addUnique('delivery', r.deliveries, deliveryKey, { done: false });
+  addUnique('event', r.events, eventKey);
   add(LOYAL_KEY, r.loyalty, (c) => ({ id: uid(), ...c }));
   add(CHECK_KEY, r.checkups, (c) => ({ id: uid(), ...c }));
   add(MAINT_KEY, r.maintenance, (m) => ({ id: uid(), ...m }));
-  let shoppingAdded = false;
-  if (r.shopping.length) {
-    snap(SHARED_KEY, {});
-    const all = store.load(SHARED_KEY, {});
-    for (const text of r.shopping) { const id = 's' + uid(); all[id] = { id, text, done: false, updatedAt: now(), deleted: false }; }
-    store.save(SHARED_KEY, all);
-    shoppingAdded = true;
-    scheduleSync();
-  }
+  for (const text of r.shopping) addedShared.push(sharedAdd('shop', { text, done: false }));
+  if (addedShared.length) scheduleSync();
   let vehicleSnap = null;
   if (Object.keys(r.vehicle).length) {
     vehicleSnap = JSON.parse(JSON.stringify(loadVehicle()));
@@ -2155,12 +2215,14 @@ function applyParsedImport(r) {
     for (const [k, val] of Object.entries(r.vehicle)) if (val) v[k] = k === 'reg' ? cleanReg(val) : val;
     saveVehicle(v);
   }
-  const rerender = () => { renderSubs(); renderUtilities(); renderDocs(); renderDeliveries(); renderLoyalty(); renderCheckups(); renderMaint(); renderShared(); initCarTab(); renderHome(); };
+  const rerender = () => { renderSubs(); renderUtilities(); renderDocs(); renderDeliveries(); renderLoyalty(); renderCheckups(); renderMaint(); renderSharedAll(); initCarTab(); };
   rerender();
   const undo = () => {
     for (const [key, val] of Object.entries(snapshot)) store.save(key, val);
     if (vehicleSnap) saveVehicle(vehicleSnap);
-    if (shoppingAdded) scheduleSync();
+    // Shared items are removed (not rolled back) so the removal syncs too.
+    for (const id of addedShared) sharedRemove(id);
+    if (addedShared.length) scheduleSync();
     rerender();
   };
   return { count: importCount(r), undo };
@@ -2411,6 +2473,9 @@ function handleLaunchParams() {
   const hasShared = q.has('title') || q.has('text') || q.has('url');
   history.replaceState(null, '', location.pathname); // don't repeat on refresh
   if (importPayload) {
+    (async () => {
+    // Pull your partner's latest first, so things they already added aren't duplicated.
+    if (paired()) await Promise.race([syncNow(), new Promise((r) => setTimeout(r, 5000))]);
     try {
       const r = parseImport(decodeImportPayload(importPayload));
       if (importCount(r)) {
@@ -2423,6 +2488,7 @@ function handleLaunchParams() {
     } catch {
       toast('Sorry — that import link could not be read.');
     }
+    })();
     return;
   }
   if (hasShared) {
@@ -2474,6 +2540,7 @@ async function initAll() {
   } catch (e) {
     log('info', 'Media key/migrate: ' + e.message);
   }
+  migrateToShared();
   setConnected(false);
   renderHistory();
   renderTrips();
