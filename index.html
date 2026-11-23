@@ -271,17 +271,12 @@
       <div id="docs-out"></div>
 
       <h3 id="sec-utilities">Utilities</h3>
-      <div class="card" id="meters-card">
-        <h2>Meter readings</h2>
-        <p class="muted small">Add a reading whenever you check a meter or your supplier asks. Shared with your partner, so either of you can add one.</p>
-        <div id="meters"></div>
-      </div>
       <div class="card">
-        <p class="muted small">Store your plans so you get a nudge before each renewal — that's when switching saves the most.</p>
+        <p class="muted small">Your household's suppliers, shared with your partner. You'll get a nudge before each renewal (that's when switching saves the most), and meter readings sit with the supplier they belong to.</p>
         <details class="inner-form" id="util-form">
           <summary>Add a plan</summary>
           <label class="field">Type
-            <select id="util-type"><option>Energy</option><option>Broadband</option><option>Mobile</option><option>Water</option><option>TV / streaming</option><option>Insurance</option><option>Other</option></select>
+            <select id="util-type"><option value="Energy">Energy (gas &amp; electricity)</option><option>Electricity</option><option>Gas</option><option>Broadband</option><option>Mobile</option><option>Water</option><option>TV / streaming</option><option>Insurance</option><option>Other</option></select>
           </label>
           <label class="field">Provider<input id="util-provider" type="text" placeholder="e.g. Octopus"></label>
           <label class="field">Tariff / plan name<input id="util-tariff" type="text" placeholder="e.g. Flexible 12M (optional)"></label>
@@ -294,6 +289,11 @@
           <p class="muted small">The more you add (tariff + usage), the better the comparison I can do for you at renewal.</p>
         </details>
         <ul id="util-list" class="list"></ul>
+      </div>
+      <div class="card" id="meters-card" hidden>
+        <h2>Meter readings</h2>
+        <p class="muted small" id="meters-hint"></p>
+        <div id="meters"></div>
       </div>
 
       <h3 id="sec-subscriptions">Subscriptions</h3>

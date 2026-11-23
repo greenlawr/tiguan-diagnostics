@@ -403,7 +403,8 @@ button:active:not(:disabled), .btn-a:active { transform: translateY(1px); }
 .meter-stat { margin-top: 8px; font-size: 14px; color: var(--muted); }
 .meter-add { margin-top: 10px; gap: 8px; flex-wrap: nowrap; }
 .meter-add input[type=number] { flex: 1; min-width: 0; }
-.meter-add input[type=date] { flex: 0 0 auto; width: 140px; min-width: 0; }
+.meter-date { display: flex; align-items: center; gap: 8px; margin-top: 6px; font-size: 13px; color: var(--muted); }
+.meter-date input { font: inherit; font-size: 14px; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 4px 8px; min-height: 34px; min-width: 0; max-width: 170px; }
 .meter-add button { width: auto; flex: 0 0 auto; }
 .meter-add input { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; min-height: 48px; }
 
@@ -469,3 +470,10 @@ button:active:not(:disabled), .btn-a:active { transform: translateY(1px); }
 .today-head h2 { margin: 0; }
 .today-card .list { margin-top: 6px; }
 .today-toggle { margin-top: 10px; text-align: left; padding: 8px 0 0; min-height: 36px; }
+
+/* Meters inside a supplier card */
+.util-meters { margin-top: 12px; padding-top: 2px; border-top: 1px solid var(--line); }
+.util-meters .meter:first-child { padding-top: 12px; }
+
+/* Life hub: blocks outside the open section */
+.sec-off { display: none !important; }

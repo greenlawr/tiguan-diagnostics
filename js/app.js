@@ -182,7 +182,8 @@ function showLifeSection(name) {
   if (!showMenu) $('life-back-title').textContent = $('sec-' + name)?.textContent || '';
   for (const child of tab.children) {
     if (child === menu || child === back || child.dataset.lifeAlways) continue;
-    child.hidden = showMenu ? true : child.dataset.lifeSec !== name;
+    // A separate class (not `hidden`) so elements that hide themselves stay hidden.
+    child.classList.toggle('sec-off', showMenu || child.dataset.lifeSec !== name);
   }
   window.scrollTo(0, 0);
 }
@@ -1161,7 +1162,7 @@ function greeting() {
 
 function isAppEmpty() {
   const v = loadVehicle();
-  const anyList = [DOCS_KEY, UTIL_KEY, SUBS_KEY, LOYAL_KEY, MAINT_KEY, CHECK_KEY, INV_KEY].some((k) => store.load(k, []).length);
+  const anyList = [DOCS_KEY, SUBS_KEY, LOYAL_KEY, MAINT_KEY, CHECK_KEY, INV_KEY].some((k) => store.load(k, []).length);
   const anyShopping = Object.values(store.load(SHARED_KEY, {})).some((i) => !i.deleted);
   return !anyList && !anyShopping && !v.reg && !v.mot;
 }
@@ -1184,7 +1185,7 @@ const HOME_TILES = [
   { icon: '🛒', label: 'Shopping list', go: () => goLife('shopping'), badge: () => { const n = Object.values(store.load(SHARED_KEY, {})).filter((i) => !i.deleted && !i.done).length; return n ? { text: String(n), cls: 'minor' } : null; } },
   { icon: '📦', label: 'Deliveries', go: () => goLife('deliveries'), badge: () => { const n = sharedItems('delivery').filter((d) => !d.done).length; return n ? { text: String(n), cls: 'minor' } : null; } },
   { icon: '📄', label: 'Documents', go: () => goLife('documents'), badge: () => { const soon = store.load(DOCS_KEY, []).filter((d) => d.expiry && countdown(d.expiry, '').days <= 30).length; return soon ? { text: String(soon), cls: 'soon' } : null; } },
-  { icon: '⚡', label: 'Utilities', go: () => goLife('utilities'), badge: () => { const soon = store.load(UTIL_KEY, []).filter((u) => u.renewal && countdown(u.renewal, '').days <= 30).length; return soon ? { text: String(soon), cls: 'soon' } : null; } },
+  { icon: '⚡', label: 'Utilities', go: () => goLife('utilities'), badge: () => { const soon = utilities().filter((u) => u.renewal && countdown(u.renewal, '').days <= 30).length; return soon ? { text: String(soon), cls: 'soon' } : null; } },
   { icon: '💷', label: 'Money & tax', go: () => goLife('tax') },
   { icon: '🏠', label: 'Home', go: () => goLife('home') },
   { icon: '❤️', label: 'Health', go: () => goLife('health') },
@@ -1456,7 +1457,7 @@ function renderDashboard() {
   }
 
   // "Time to compare" nudge for utilities renewing within ~30 days.
-  const dueUtils = store.load(UTIL_KEY, []).filter((u) => {
+  const dueUtils = utilities().filter((u) => {
     if (!u.renewal) return false;
     const cd = countdown(u.renewal, u.type);
     return cd && cd.days <= 30;
@@ -1540,6 +1541,9 @@ $('btn-doc-add').addEventListener('click', async () => {
 
 // ---------- life sections: utilities, subscriptions, tax, home, health, sharing ----------
 const UTIL_KEY = 'tiguan-utilities';
+// Utility plans live in the shared space so both phones see the suppliers (and the meter readings under them).
+// (The plan's service — Energy, Water… — is stored as `service`, since `type` marks the kind of shared item.)
+const utilities = () => sharedItems('utility').map((u) => ({ ...u, type: u.service || 'Other' }));
 const SUBS_KEY = 'tiguan-subscriptions';
 const INV_KEY = 'tiguan-inventory';
 const METER_KEY = 'tiguan-meters';
@@ -1555,7 +1559,7 @@ const COMPARE = { Energy: 'https://www.moneysavingexpert.com/utilities/', Broadb
 
 // Utilities
 function renderUtilities() {
-  const items = store.load(UTIL_KEY, []);
+  const items = utilities();
   const list = $('util-list');
   list.replaceChildren();
   for (const u of [...items].sort((a, b) => (a.renewal || '9') < (b.renewal || '9') ? -1 : 1)) {
@@ -1567,6 +1571,8 @@ function renderUtilities() {
     if (u.tariff || u.usage) {
       row.append(el('div', { class: 'sub', style: 'margin-top:6px', text: [u.tariff, u.usage].filter(Boolean).join(' · ') }));
     }
+    const meters = METERS.filter((m) => planForMeter(m.kind, items) === u);
+    if (meters.length) row.append(el('div', { class: 'util-meters' }, ...meters.map((m) => meterPanel(m, u))));
     const actions = el('div', { class: 'row', style: 'margin-top:10px' });
     const rec = el('button', { text: 'Get a recommendation' });
     rec.addEventListener('click', async () => {
@@ -1583,7 +1589,10 @@ function renderUtilities() {
     if (COMPARE[u.type]) actions.append(el('a', { class: 'btn-a', href: COMPARE[u.type], target: '_blank', rel: 'noopener', text: 'Compare site' }));
     if (u.renewal) actions.append(el('a', { class: 'btn-a', href: calendarEvent(`${u.type} renewal${u.provider ? ' – ' + u.provider : ''}`, u.renewal, { guests: partnerEmail() }), target: '_blank', rel: 'noopener', text: 'Remind me' }));
     const del = el('button', { class: 'del', text: '✕' });
-    del.addEventListener('click', () => deleteItem(UTIL_KEY, u.id, () => { renderUtilities(); renderDashboard(); }, { label: u.type }));
+    del.addEventListener('click', () => {
+      sharedRemove(u.id); scheduleSync(); renderUtilities(); renderDashboard();
+      toast(`Deleted ${u.type}`, { actionLabel: 'Undo', onAction: () => { sharedSet({ ...u, type: 'utility', updatedAt: now(), deleted: false }); scheduleSync(); renderUtilities(); renderDashboard(); } });
+    });
     actions.append(del);
     row.append(actions);
     if (u.recommendation) {
@@ -1597,6 +1606,7 @@ function renderUtilities() {
     list.append(row);
   }
   if (!items.length) list.append(el('li', { class: 'muted small', text: 'No plans added.' }));
+  renderLooseMeters(items);
   renderMoneyOverview();
 }
 // Estimate the cheapest monthly figure mentioned in a recommendation.
@@ -1608,7 +1618,7 @@ function parseBestMonthly(text) {
 let recUtilId = null;
 function openRecModal(id) {
   recUtilId = id;
-  const u = store.load(UTIL_KEY, []).find((x) => x.id === id);
+  const u = utilities().find((x) => x.id === id);
   $('rec-text').value = u && u.recommendation ? u.recommendation.text : '';
   $('rec-modal').hidden = false;
   $('rec-text').focus();
@@ -1616,11 +1626,9 @@ function openRecModal(id) {
 $('rec-cancel').addEventListener('click', () => { $('rec-modal').hidden = true; recUtilId = null; });
 $('rec-save').addEventListener('click', () => {
   const text = $('rec-text').value.trim();
-  const all = store.load(UTIL_KEY, []);
-  const u = all.find((x) => x.id === recUtilId);
-  if (u) {
-    u.recommendation = text ? { text, savedAt: new Date().toISOString(), bestMonthly: parseBestMonthly(text) } : null;
-    store.save(UTIL_KEY, all);
+  if (recUtilId) {
+    sharedUpdate(recUtilId, { recommendation: text ? { text, savedAt: new Date().toISOString(), bestMonthly: parseBestMonthly(text) } : null });
+    scheduleSync();
   }
   $('rec-modal').hidden = true;
   recUtilId = null;
@@ -1640,8 +1648,8 @@ function utilityBrief(u) {
   ].filter(Boolean).join('\n');
 }
 $('btn-util-add').addEventListener('click', () => {
-  const entry = { id: Date.now(), type: $('util-type').value, provider: $('util-provider').value.trim(), tariff: $('util-tariff').value.trim(), cost: parseFloat($('util-cost').value) || 0, renewal: $('util-renewal').value, usage: $('util-usage').value.trim() };
-  store.save(UTIL_KEY, [entry, ...store.load(UTIL_KEY, [])]);
+  sharedAdd('utility', { service: $('util-type').value, provider: $('util-provider').value.trim(), tariff: $('util-tariff').value.trim(), cost: parseFloat($('util-cost').value) || 0, renewal: $('util-renewal').value, usage: $('util-usage').value.trim() });
+  scheduleSync();
   for (const id of ['util-provider', 'util-tariff', 'util-cost', 'util-renewal', 'util-usage']) $(id).value = '';
   renderUtilities(); renderDashboard(); toast('Plan added ✓');
 });
@@ -1677,7 +1685,7 @@ const CAT_COLOR = { Subscriptions: 'var(--accent)', Utilities: 'var(--soon)' };
 function renderMoneyOverview() {
   const out = $('money-overview');
   if (!out) return;
-  const m = moneyOverview(store.load(SUBS_KEY, []), store.load(UTIL_KEY, []));
+  const m = moneyOverview(store.load(SUBS_KEY, []), utilities());
   out.replaceChildren(el('h2', { text: 'Your outgoings' }));
   if (!m.items.length) {
     out.append(el('p', { class: 'muted small', text: 'Add your subscriptions and utility plans and your monthly spend appears here.' }));
@@ -1788,55 +1796,73 @@ const METERS = [
 ];
 const fmtNum = (n) => Number(n).toLocaleString('en-GB', { maximumFractionDigits: 2 });
 function todayISO() { const d = new Date(); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10); }
-function renderMeters() {
-  const box = $('meters');
-  if (!box) return;
-  box.replaceChildren();
-  const all = sharedItems('meter');
-  for (const m of METERS) {
-    const rows = all.filter((r) => r.kind === m.kind).sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : b.updatedAt - a.updatedAt));
-    const last = rows[0];
-    const usage = meterUsage(rows);
-    const panel = el('div', { class: 'meter' },
-      el('div', { class: 'meter-head' }, icon(m.icon),
-        el('div', {}, el('div', { class: 'name', text: m.kind }),
-          el('div', { class: 'sub', text: last ? `Last: ${fmtNum(last.reading)} ${m.unit} · ${fmtDate(last.date)}` : 'No readings yet' }))));
-    if (usage) panel.append(el('div', { class: 'meter-stat', text: `About ${usage.perDay.toFixed(1)} ${m.unit} a day (${fmtNum(usage.used)} ${m.unit} over ${Math.round(usage.days)} days)` }));
-    const input = el('input', { type: 'number', inputmode: 'decimal', placeholder: 'New reading', 'aria-label': `New ${m.kind.toLowerCase()} reading` });
-    const date = el('input', { type: 'date', 'aria-label': `${m.kind} reading date` });
-    date.value = todayISO();
-    const add = el('button', { class: 'primary', text: 'Add' });
-    add.addEventListener('click', () => {
-      const reading = parseFloat(input.value);
-      if (isNaN(reading)) { input.focus(); return toast('Type the number shown on the meter.'); }
-      const d = date.value || todayISO();
-      if (last && reading < last.reading && d >= last.date && !confirm(`That's lower than your last ${m.kind.toLowerCase()} reading (${fmtNum(last.reading)}). Save it anyway?`)) return;
-      sharedAdd('meter', { kind: m.kind, reading, date: d });
-      renderMeters();
-      scheduleSync();
-      haptic();
-      toast(`${m.kind} reading saved ✓`);
-    });
-    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') add.click(); });
-    panel.append(el('div', { class: 'row meter-add' }, input, date, add));
-    if (rows.length) {
-      const ul = el('ul', { class: 'list' });
-      for (const r of rows) ul.append(deletableRow(`${fmtNum(r.reading)} ${m.unit}`, fmtDate(r.date), () => { sharedRemove(r.id); renderMeters(); scheduleSync(); }));
-      panel.append(el('details', { class: 'inner' }, el('summary', { text: `History (${rows.length})` }), ul));
-    }
-    box.append(panel);
-  }
+// Which supplier a meter belongs to: a dedicated Electricity / Gas plan, else a
+// dual-fuel Energy plan; water readings go with the Water plan.
+function planForMeter(kind, plans) {
+  const type = (p) => (p.type || '').toLowerCase();
+  if (kind === 'Water') return plans.find((p) => type(p) === 'water');
+  return plans.find((p) => type(p) === kind.toLowerCase()) || plans.find((p) => type(p) === 'energy');
 }
+function meterPanel(m, plan) {
+  const rows = sharedItems('meter').filter((r) => r.kind === m.kind).sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : b.updatedAt - a.updatedAt));
+  const last = rows[0];
+  const usage = meterUsage(rows);
+  const panel = el('div', { class: 'meter' },
+    el('div', { class: 'meter-head' }, icon(m.icon),
+      el('div', {}, el('div', { class: 'name', text: `${m.kind} meter` }),
+        el('div', { class: 'sub', text: last ? `Last: ${fmtNum(last.reading)} ${m.unit} · ${fmtDate(last.date)}` : 'No readings yet' }))));
+  if (usage) panel.append(el('div', { class: 'meter-stat', text: `About ${usage.perDay.toFixed(1)} ${m.unit} a day (${fmtNum(usage.used)} ${m.unit} over ${Math.round(usage.days)} days)` }));
+  const input = el('input', { type: 'number', inputmode: 'decimal', placeholder: 'New reading', 'aria-label': `New ${m.kind.toLowerCase()} reading` });
+  const date = el('input', { type: 'date', 'aria-label': `${m.kind} reading date` });
+  date.value = todayISO();
+  const add = el('button', { class: 'primary', text: 'Add' });
+  add.addEventListener('click', () => {
+    const reading = parseFloat(input.value);
+    if (isNaN(reading)) { input.focus(); return toast('Type the number shown on the meter.'); }
+    const d = date.value || todayISO();
+    if (last && reading < last.reading && d >= last.date && !confirm(`That's lower than your last ${m.kind.toLowerCase()} reading (${fmtNum(last.reading)}). Save it anyway?`)) return;
+    // Keep the supplier with the reading, so switching supplier leaves a clear record.
+    sharedAdd('meter', { kind: m.kind, reading, date: d, provider: plan?.provider || '' });
+    renderUtilities();
+    scheduleSync();
+    haptic();
+    toast(`${m.kind} reading saved ✓`);
+  });
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') add.click(); });
+  panel.append(el('div', { class: 'row meter-add' }, input, add), el('label', { class: 'meter-date' }, 'Reading taken on', date));
+  if (rows.length) {
+    const ul = el('ul', { class: 'list' });
+    for (const r of rows) {
+      const detail = fmtDate(r.date) + (r.provider && r.provider !== plan?.provider ? ` · ${r.provider}` : '');
+      ul.append(deletableRow(`${fmtNum(r.reading)} ${m.unit}`, detail, () => { sharedRemove(r.id); renderUtilities(); scheduleSync(); }));
+    }
+    panel.append(el('details', { class: 'inner' }, el('summary', { text: `History (${rows.length})` }), ul));
+  }
+  return panel;
+}
+// Meters with no matching supplier yet get their own card below the plans.
+function renderLooseMeters(plans) {
+  const loose = METERS.filter((m) => !planForMeter(m.kind, plans));
+  $('meters-card').hidden = !loose.length;
+  if (!loose.length) return;
+  const names = loose.map((m) => m.kind.toLowerCase());
+  $('meters-hint').textContent = loose.length === METERS.length
+    ? 'Add your energy and water suppliers above and each meter will sit with its supplier. You can still log readings here meanwhile.'
+    : `No ${names.join(' or ')} supplier added yet — add one above and ${loose.length === 1 ? 'this meter moves' : 'these meters move'} under it.`;
+  $('meters').replaceChildren(...loose.map((m) => meterPanel(m, null)));
+}
+function renderMeters() { renderUtilities(); }
 
 // One-time move of deliveries, calendar events and meter readings into the
 // shared space, so they sync with your partner. Safe to run every start.
 function migrateToShared() {
-  const del = store.load(DELIVERIES_KEY, []), ev = store.load(EVENTS_KEY, []), met = store.load(METER_KEY, []);
-  if (!del.length && !ev.length && !met.length) return;
+  const del = store.load(DELIVERIES_KEY, []), ev = store.load(EVENTS_KEY, []), met = store.load(METER_KEY, []), utl = store.load(UTIL_KEY, []);
+  if (!del.length && !ev.length && !met.length && !utl.length) return;
+  for (const u of utl) { const { id, type, ...rest } = u; sharedAdd('utility', { ...rest, service: type }); }
   for (const d of del) if (!d.done) { const { id, ...rest } = d; sharedAdd('delivery', rest); }
   for (const e of ev) { const { id, ...rest } = e; sharedAdd('event', rest); }
   for (const r of met) sharedAdd('meter', { kind: r.type, reading: r.reading, date: r.date });
-  store.save(DELIVERIES_KEY, []); store.save(EVENTS_KEY, []); store.save(METER_KEY, []);
+  store.save(DELIVERIES_KEY, []); store.save(EVENTS_KEY, []); store.save(METER_KEY, []); store.save(UTIL_KEY, []);
 }
 
 // Home: maintenance
@@ -1911,7 +1937,7 @@ function initEmergency() {
 function collectExtraReminders() {
   const items = [];
   const add = (date, label, sub) => { const cd = date ? countdown(date, label) : null; if (cd) items.push({ label, sub, days: cd.days, level: cd.level, text: cd.text }); };
-  for (const u of store.load(UTIL_KEY, [])) add(u.renewal, u.type + (u.provider ? ' (' + u.provider + ')' : ''), 'Utilities');
+  for (const u of utilities()) add(u.renewal, u.type + (u.provider ? ' (' + u.provider + ')' : ''), 'Utilities');
   for (const s of store.load(SUBS_KEY, [])) add(s.renewal, s.name, 'Subscription');
   for (const m of store.load(MAINT_KEY, [])) add(m.date, m.task, 'Home');
   for (const c of store.load(CHECK_KEY, [])) add(nextDue(c.last, c.interval), c.type, 'Health');
@@ -2118,7 +2144,7 @@ function peopleOptions(sel, includeAnyone) {
   for (const n of [myName(), partnerName()]) sel.add(new Option(n, n));
   if (keep) sel.value = keep;
 }
-function renderSharedAll() { renderShared(); renderBills(); renderTasks(); renderDeliveries(); renderMeters(); renderCalendar(); renderHome(); }
+function renderSharedAll() { renderShared(); renderBills(); renderTasks(); renderDeliveries(); renderUtilities(); renderCalendar(); renderHome(); }
 
 // Shared bills with who-owes-whom
 function renderBills() {
@@ -2340,7 +2366,6 @@ function applyParsedImport(r) {
   const snap = (key, def) => { if (!(key in snapshot)) snapshot[key] = JSON.parse(JSON.stringify(store.load(key, def))); };
   const add = (key, items, map) => { if (items.length) { snap(key, []); store.save(key, [...items.map(map), ...store.load(key, [])]); } };
   add(SUBS_KEY, r.subscriptions, (s) => ({ id: uid(), ...s }));
-  add(UTIL_KEY, r.utilities, (u) => ({ id: uid(), ...u }));
   add(DOCS_KEY, r.documents, (d) => ({ id: uid(), ...d }));
   // Deliveries and calendar events live in the shared space (so your partner
   // sees them). Skip anything already there, so tapping the same morning link
@@ -2352,6 +2377,7 @@ function applyParsedImport(r) {
   };
   addUnique('delivery', r.deliveries, deliveryKey, { done: false });
   addUnique('event', r.events, eventKey);
+  for (const { type, ...u } of r.utilities) addedShared.push(sharedAdd('utility', { ...u, service: type }));
   add(LOYAL_KEY, r.loyalty, (c) => ({ id: uid(), ...c }));
   add(CHECK_KEY, r.checkups, (c) => ({ id: uid(), ...c }));
   add(MAINT_KEY, r.maintenance, (m) => ({ id: uid(), ...m }));
@@ -2804,7 +2830,7 @@ $('cal-hide').addEventListener('input', (e) => persistCalHide(e.target.value));
 
 // ---------- app updates ----------
 // Must match CACHE in sw.js (a test checks this).
-const APP_VERSION = 'evergreen-v42';
+const APP_VERSION = 'evergreen-v43';
 let updateReady = false;
 async function checkForUpdate(manual = false) {
   try {

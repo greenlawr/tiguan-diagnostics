@@ -142,9 +142,15 @@ export class Vault {
     await this._persist();
   }
 
-  async _persist() {
-    const blob = await encryptWithKey(this.key, this.data, this.salt);
-    this.storage.setItem(STORAGE_KEY, JSON.stringify(blob));
+  // Writes run one at a time, each encrypting the data as it is when its turn
+  // comes, so a slower earlier save can never overwrite a newer one.
+  _persist() {
+    const run = async () => {
+      const blob = await encryptWithKey(this.key, this.data, this.salt);
+      this.storage.setItem(STORAGE_KEY, JSON.stringify(blob));
+    };
+    this._writing = (this._writing || Promise.resolve()).then(run, run);
+    return this._writing;
   }
 
   /** The encrypted blob, for the user to download as a backup. */
