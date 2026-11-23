@@ -37,6 +37,15 @@ let liveRunning = false;
 let supportedPids = null;
 const logLines = [];
 
+// Debounce frequent writes (typing) so the encrypted store isn't rewritten per keystroke.
+const debounce = (fn, ms = 500) => {
+  let t;
+  return (...args) => {
+    clearTimeout(t);
+    t = setTimeout(() => fn(...args), ms);
+  };
+};
+
 // Encrypted on-device store. Every collection below lives inside the vault, so
 // it is only readable after the user unlocks with their passphrase.
 const vault = new Vault();
@@ -82,16 +91,59 @@ function showTab(name) {
   if (name !== 'live') stopLive();
   if (name === 'help') renderLog();
   if (name === 'home') renderHome();
+  if (name === 'life') { showLifeSection(pendingLifeSection); pendingLifeSection = null; }
   // The connection pill only matters on the car screens.
   $('conn').style.display = ['check', 'live', 'trips'].includes(name) || elm ? '' : 'none';
   window.scrollTo(0, 0);
 }
 document.querySelectorAll('.tabs button').forEach((btn) => btn.addEventListener('click', () => showTab(btn.dataset.tab)));
 document.querySelectorAll('.nav-pill').forEach((btn) => btn.addEventListener('click', () => showTab(btn.dataset.go)));
-// Open the Life tab and scroll to a named section.
+// ----- Life tab as a focused hub-and-spoke -----
+const SEC_ICON = { deliveries: '📦', documents: '📄', utilities: '⚡', subscriptions: '🔁', tax: '💷', home: '🏠', health: '❤️', loyalty: '💳', sharing: '📅', shopping: '🛒' };
+let pendingLifeSection = null;
+function initLifeNav() {
+  const tab = $('tab-life');
+  const back = el('div', { id: 'life-back', class: 'life-back', hidden: '' });
+  const backBtn = el('button', { class: 'nav-pill', text: '‹ All' });
+  backBtn.addEventListener('click', () => showLifeSection(null));
+  back.append(backBtn, el('span', { id: 'life-back-title', class: 'name' }));
+
+  const menu = el('div', { id: 'life-menu', class: 'tiles' });
+  for (const h of tab.querySelectorAll(':scope > h3[id^="sec-"]')) {
+    const name = h.id.slice(4);
+    const btn = el('button', { class: 'tile-btn' }, el('span', { class: 'tile-icon', text: SEC_ICON[name] || '•' }), el('span', { class: 'tile-label', text: h.textContent }));
+    btn.addEventListener('click', () => showLifeSection(name));
+    menu.append(btn);
+  }
+  tab.prepend(menu);
+  tab.insertBefore(back, menu);
+
+  let cur = '';
+  for (const child of [...tab.children]) {
+    if (child === menu || child === back) continue;
+    if (child.id === 'rec-modal' || child.id === 'scan-modal') { child.dataset.lifeAlways = '1'; continue; }
+    if (child.tagName === 'H3' && child.id.startsWith('sec-')) cur = child.id.slice(4);
+    child.dataset.lifeSec = cur;
+  }
+  showLifeSection(null);
+}
+function showLifeSection(name) {
+  const tab = $('tab-life');
+  const menu = $('life-menu');
+  const back = $('life-back');
+  const showMenu = !name;
+  menu.hidden = !showMenu;
+  back.hidden = showMenu;
+  if (!showMenu) $('life-back-title').textContent = $('sec-' + name)?.textContent || '';
+  for (const child of tab.children) {
+    if (child === menu || child === back || child.dataset.lifeAlways) continue;
+    child.hidden = showMenu ? true : child.dataset.lifeSec !== name;
+  }
+  window.scrollTo(0, 0);
+}
 function goLife(section) {
+  pendingLifeSection = section;
   showTab('life');
-  requestAnimationFrame(() => $('sec-' + section)?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
 }
 
 // ---------- connection ----------
@@ -1470,14 +1522,21 @@ $('btn-check-add').addEventListener('click', () => {
 
 // Emergency card + partner email (bound inputs)
 const EMG_FIELDS = { 'emg-blood': 'blood', 'emg-nhs': 'nhs', 'emg-allergies': 'allergies', 'emg-meds': 'meds', 'emg-contact': 'contact' };
+let emergencyBound = false;
+const emergencyDraft = {};
 function initEmergency() {
   const e = store.load(EMG_KEY, {});
-  for (const [id, key] of Object.entries(EMG_FIELDS)) {
-    $(id).value = e[key] || '';
-    $(id).addEventListener('input', (ev) => { const cur = store.load(EMG_KEY, {}); cur[key] = ev.target.value; store.save(EMG_KEY, cur); });
-  }
+  Object.assign(emergencyDraft, e);
+  for (const [id, key] of Object.entries(EMG_FIELDS)) $(id).value = e[key] || '';
   $('partner-email').value = store.load(SETTINGS_KEY, {}).partnerEmail || '';
-  $('partner-email').addEventListener('input', (ev) => { const s = store.load(SETTINGS_KEY, {}); s.partnerEmail = ev.target.value.trim(); store.save(SETTINGS_KEY, s); });
+  if (emergencyBound) return; // attach listeners once, not on every unlock
+  emergencyBound = true;
+  const persistEmg = debounce(() => store.save(EMG_KEY, { ...emergencyDraft }), 600);
+  for (const [id, key] of Object.entries(EMG_FIELDS)) {
+    $(id).addEventListener('input', (ev) => { emergencyDraft[key] = ev.target.value; persistEmg(); });
+  }
+  const persistPartner = debounce((v) => { const s = store.load(SETTINGS_KEY, {}); s.partnerEmail = v; store.save(SETTINGS_KEY, s); }, 600);
+  $('partner-email').addEventListener('input', (ev) => persistPartner(ev.target.value.trim()));
 }
 
 // Extra dashboard reminders from the new sections
@@ -1577,7 +1636,8 @@ function refreshPairUI() {
   if (s.syncUrl) $('sync-url').value = s.syncUrl;
   renderShared(); // the list works locally whether or not sharing is on
 }
-$('sync-url').addEventListener('input', (e) => saveSettings({ syncUrl: e.target.value.trim() }));
+const persistSyncUrl = debounce((v) => saveSettings({ syncUrl: v }), 600);
+$('sync-url').addEventListener('input', (e) => persistSyncUrl(e.target.value.trim()));
 $('btn-pair-create').addEventListener('click', () => {
   if (!settings().syncUrl) return setStatus('pair-status', 'Enter the sync server address first (see the sync-worker guide).', true);
   const code = generateHouseholdCode();
@@ -1954,6 +2014,7 @@ try {
 } catch {
   applyTextSize('normal');
 }
+initLifeNav();
 showLockScreen();
 if ('serviceWorker' in navigator && location.protocol === 'https:') {
   navigator.serviceWorker.register('sw.js').catch(() => {});
