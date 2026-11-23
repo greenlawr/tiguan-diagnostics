@@ -655,3 +655,19 @@ test('moneyOverview aggregates recurring outgoings and savings', () => {
   assert.equal(m.savings, 35); // 185 -> 150
   assert.equal(moneyOverview([], []).monthly, 0);
 });
+
+// ---------- shared household balance ----------
+import { householdBalance } from '../js/life.js';
+
+test('householdBalance nets split bills by who paid', () => {
+  const bills = [
+    { amount: 100, paidBy: 'Lawrence', split: true },          // Jess owes Lawrence 50
+    { amount: 60, paidBy: 'Jess', split: true },               // Lawrence owes Jess 30
+    { amount: 40, paidBy: 'Jess', split: true, settled: true },// settled -> ignored
+    { amount: 20, paidBy: 'Lawrence', split: false },          // not split -> no balance
+  ];
+  assert.equal(householdBalance(bills, 'Lawrence').net, 20);   // +50 -30 = owed 20
+  assert.equal(householdBalance(bills, 'Jess').net, -20);      // mirror
+  assert.equal(householdBalance(bills, 'Lawrence').sharedTotal, 220);
+  assert.equal(householdBalance([], 'Lawrence').net, 0);
+});

@@ -16,6 +16,8 @@ const PATHS = {
   gear: '<circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M4.5 7.5l2 1.2M17.5 14.3l2 1.2M4.5 16.5l2-1.2M17.5 9.7l2-1.2"/>',
   refresh: '<path d="M20 11a8 8 0 1 0-1 5"/><path d="M20 5v5h-5"/>',
   calendar: '<rect x="3.5" y="5" width="17" height="15" rx="2.5"/><path d="M3.5 9.5h17M8 3v4M16 3v4"/>',
+  split: '<circle cx="7" cy="7" r="3"/><circle cx="17" cy="17" r="3"/><path d="M10 7h7v7"/>',
+  tasks: '<path d="M4 6l2 2 3-3"/><path d="M4 13l2 2 3-3"/><path d="M12 7h8M12 14h8M4 20h16"/>',
 };
 
 export function icon(name) {
@@ -40,4 +42,5 @@ export const TILE_ICON = {
 export const SEC_ICON_NAME = {
   deliveries: 'box', documents: 'doc', utilities: 'bolt', subscriptions: 'refresh',
   tax: 'money', home: 'house', health: 'heart', loyalty: 'card', sharing: 'calendar', shopping: 'cart',
+  bills: 'split', tasks: 'tasks',
 };

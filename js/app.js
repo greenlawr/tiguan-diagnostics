@@ -9,7 +9,7 @@ import { runHealthCheck, reportText, stateText, diffReports } from './report.js'
 import { diagnoseAppConnect, dealerSummary, CHECKLIST } from './appconnect.js';
 import { Trip, fuelRateFrom5E, fuelRateFromMaf, mpgUk } from './trip.js';
 import { calendarUrl, calendarEvent, cleanReg, GOV_MOT_HISTORY, GOV_TAX_CHECK } from './vehicle.js';
-import { takeHome, dividendTax, taxDeadlines, subscriptionsTotal, nextDue, meterUsage, moneyOverview } from './life.js';
+import { takeHome, dividendTax, taxDeadlines, subscriptionsTotal, nextDue, meterUsage, moneyOverview, householdBalance } from './life.js';
 import { fuelStats, renewals, countdown, upcomingReminders, parkMapsUrl, timeAgo, mileageSummary, mileageExport } from './garage.js';
 import { Vault } from './vault.js';
 import { CARRIER_NAMES, trackingUrl, parcelStatus, parseShared } from './deliveries.js';
@@ -1811,7 +1811,7 @@ async function syncNow() {
     const s = settings();
     const merged = await syncShared(s.syncUrl, s.householdCode, store.load(SHARED_KEY, {}));
     store.save(SHARED_KEY, merged);
-    renderShared();
+    renderSharedAll();
     setStatus('sync-status', 'Synced ' + new Date().toLocaleTimeString());
   } catch (e) {
     setStatus('sync-status', 'Could not sync (offline, or check the server address).', true);
@@ -1821,11 +1821,101 @@ async function syncNow() {
   }
 }
 
+// Shared space helpers (all shared types live in SHARED_KEY, tagged by `type`).
+function sharedSet(item) { const all = store.load(SHARED_KEY, {}); all[item.id] = item; store.save(SHARED_KEY, all); }
+function sharedUpdate(id, patch) { const all = store.load(SHARED_KEY, {}); if (all[id]) { all[id] = { ...all[id], ...patch, updatedAt: now() }; store.save(SHARED_KEY, all); } }
+const sharedItems = (type) => Object.values(store.load(SHARED_KEY, {})).filter((i) => !i.deleted && (i.type || 'shop') === type);
+const myName = () => (settings().myName || '').trim() || 'Me';
+const partnerName = () => (settings().partnerName || '').trim() || 'Partner';
+function peopleOptions(sel, includeAnyone) {
+  const keep = sel.value;
+  sel.replaceChildren();
+  if (includeAnyone) sel.add(new Option('Anyone', 'Anyone'));
+  for (const n of [myName(), partnerName()]) sel.add(new Option(n, n));
+  if (keep) sel.value = keep;
+}
+function renderSharedAll() { renderShared(); renderBills(); renderTasks(); }
+
+// Shared bills with who-owes-whom
+function renderBills() {
+  const bills = sharedItems('bill');
+  const bal = householdBalance(bills, myName());
+  const box = $('bill-balance');
+  if (!bills.length) { box.textContent = ''; box.className = 'status'; }
+  else if (bal.net === 0) { box.textContent = 'All square 👍'; box.className = 'status tag ok'; }
+  else if (bal.net > 0) { box.textContent = `${partnerName()} owes you ${money(bal.net)}`; box.className = 'status tag ok'; }
+  else { box.textContent = `You owe ${partnerName()} ${money(-bal.net)}`; box.className = 'status tag soon'; }
+  peopleOptions($('bill-paidby'), false);
+  const list = $('bill-list');
+  list.replaceChildren();
+  for (const b of bills.sort((a, b) => (a.date < b.date ? 1 : -1))) {
+    const sub = [`${b.paidBy} paid`, b.split ? 'split' : 'their own', b.date ? fmtDate(b.date) : null, b.settled ? 'settled' : null].filter(Boolean).join(' · ');
+    const row = el('li', {}, el('div', { class: 'line' }, el('div', {}, el('div', { class: 'name', text: b.name || 'Bill' }), el('div', { class: 'sub', text: sub })), el('span', { class: 'name', text: money(b.amount) })));
+    const actions = el('div', { class: 'row', style: 'margin-top:6px' });
+    if (b.split && !b.settled) { const s = el('button', { text: 'Mark settled' }); s.addEventListener('click', () => { sharedUpdate(b.id, { settled: true }); renderBills(); scheduleSync(); }); actions.append(s); }
+    const d = el('button', { class: 'del', text: '✕' });
+    d.addEventListener('click', () => { sharedUpdate(b.id, { deleted: true }); renderBills(); scheduleSync(); toast('Deleted', { actionLabel: 'Undo', onAction: () => { sharedUpdate(b.id, { deleted: false }); renderBills(); scheduleSync(); } }); });
+    actions.append(d);
+    row.append(actions);
+    list.append(row);
+  }
+  if (!bills.length) list.append(el('li', { class: 'muted small', text: 'No bills yet.' }));
+}
+$('btn-bill-add').addEventListener('click', () => {
+  const name = $('bill-name').value.trim();
+  const amount = parseFloat($('bill-amount').value) || 0;
+  if (!name || !amount) return alert('Add a name and amount.');
+  const id = 'b' + now() + Math.random().toString(36).slice(2, 6);
+  sharedSet({ id, type: 'bill', name, amount, paidBy: $('bill-paidby').value, split: $('bill-split').checked, date: $('bill-date').value || new Date().toISOString().slice(0, 10), settled: false, updatedAt: now(), deleted: false });
+  for (const i of ['bill-name', 'bill-amount', 'bill-date']) $(i).value = '';
+  renderBills(); scheduleSync(); toast('Bill added ✓');
+});
+
+// Shared tasks with an assignee
+function renderTasks() {
+  peopleOptions($('task-assignee'), true);
+  const tasks = sharedItems('task').sort((a, b) => (a.done === b.done ? b.updatedAt - a.updatedAt : a.done ? 1 : -1));
+  const list = $('task-list');
+  list.replaceChildren();
+  for (const t of tasks) {
+    const box = el('input', { type: 'checkbox' });
+    box.checked = !!t.done;
+    box.addEventListener('change', () => { sharedUpdate(t.id, { done: box.checked }); renderTasks(); scheduleSync(); haptic(); });
+    const label = el('span', { class: 'name', text: t.text });
+    if (t.done) label.style.textDecoration = 'line-through';
+    const who = t.assignee && t.assignee !== 'Anyone' ? el('span', { class: 'tag minor', text: t.assignee }) : null;
+    const del = el('button', { class: 'del', text: '✕' });
+    del.addEventListener('click', () => { sharedUpdate(t.id, { deleted: true }); renderTasks(); scheduleSync(); toast('Deleted', { actionLabel: 'Undo', onAction: () => { sharedUpdate(t.id, { deleted: false }); renderTasks(); scheduleSync(); } }); });
+    list.append(el('li', {}, el('label', { class: 'check', style: 'margin:0;flex:1' }, box, label), who, del));
+  }
+  if (!tasks.length) list.append(el('li', { class: 'muted small', text: 'No tasks yet.' }));
+}
+$('btn-task-add').addEventListener('click', () => {
+  const text = $('task-input').value.trim();
+  if (!text) return;
+  const id = 't' + now() + Math.random().toString(36).slice(2, 6);
+  sharedSet({ id, type: 'task', text, assignee: $('task-assignee').value, done: false, updatedAt: now(), deleted: false });
+  $('task-input').value = '';
+  renderTasks(); scheduleSync(); toast('Task added ✓');
+});
+$('task-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('btn-task-add').click(); });
+
+// Who's who
+function initNames() {
+  const s = settings();
+  $('my-name').value = s.myName || '';
+  $('partner-name').value = s.partnerName || '';
+}
+const persistMyName = debounce((v) => { saveSettings({ myName: v }); renderBills(); renderTasks(); }, 500);
+const persistPartnerName = debounce((v) => { saveSettings({ partnerName: v }); renderBills(); renderTasks(); }, 500);
+$('my-name').addEventListener('input', (e) => persistMyName(e.target.value.trim()));
+$('partner-name').addEventListener('input', (e) => persistPartnerName(e.target.value.trim()));
+
 function renderShared() {
   const items = store.load(SHARED_KEY, {});
   const list = $('shared-list');
   list.replaceChildren();
-  const visible = Object.values(items).filter((i) => !i.deleted).sort((a, b) => a.updatedAt - b.updatedAt);
+  const visible = Object.values(items).filter((i) => !i.deleted && (i.type || 'shop') === 'shop').sort((a, b) => a.updatedAt - b.updatedAt);
   for (const it of visible) {
     const box = el('input', { type: 'checkbox' });
     box.checked = !!it.done;
@@ -1873,6 +1963,9 @@ function initLifeSections() {
   renderMaint();
   renderCheckups();
   renderLoyalty();
+  initNames();
+  renderBills();
+  renderTasks();
   initEmergency();
   refreshPairUI();
   if (paired()) syncNow();

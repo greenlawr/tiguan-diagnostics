@@ -81,6 +81,21 @@ export function subscriptionsTotal(subs) {
   return { monthly, yearly: monthly * 12 };
 }
 
+/** Who owes whom from shared, split, unsettled bills. net>0 = you're owed, net<0 = you owe. */
+export function householdBalance(bills, myName) {
+  let net = 0;
+  let sharedTotal = 0;
+  for (const b of bills) {
+    if (b.deleted) continue;
+    sharedTotal += b.amount || 0;
+    if (b.settled || !b.split) continue;
+    const half = (b.amount || 0) / 2;
+    if (b.paidBy === myName) net += half;
+    else net -= half;
+  }
+  return { net, sharedTotal };
+}
+
 /** Combined recurring outgoings (subscriptions + utilities) for the money overview. */
 export function moneyOverview(subs = [], utils = []) {
   const subItems = subs.map((s) => ({ name: s.name || 'Subscription', monthly: monthlyEquivalent(s), cat: 'Subscriptions', saving: 0 }));

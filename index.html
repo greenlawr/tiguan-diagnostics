@@ -411,6 +411,39 @@
         <button id="btn-shared-clear" class="link" hidden>Clear ticked items</button>
       </div>
 
+      <h3 id="sec-bills">Shared bills</h3>
+      <div class="card">
+        <p class="muted small">Log who paid for what. Split ones show who owes whom. Syncs with your partner once you're paired.</p>
+        <div class="grid2">
+          <label class="field">Your name<input id="my-name" type="text" autocomplete="off" placeholder="e.g. Lawrence"></label>
+          <label class="field">Partner's name<input id="partner-name" type="text" autocomplete="off" placeholder="e.g. Jess"></label>
+        </div>
+        <div id="bill-balance" class="status"></div>
+        <details class="inner-form" id="bill-form">
+          <summary>Add a bill</summary>
+          <label class="field">What for<input id="bill-name" type="text" placeholder="e.g. Weekly shop"></label>
+          <div class="grid2">
+            <label class="field">Amount (£)<input id="bill-amount" type="number" inputmode="decimal" placeholder="e.g. 84.50"></label>
+            <label class="field">Paid by<select id="bill-paidby"></select></label>
+          </div>
+          <label class="field">Date<input id="bill-date" type="date"></label>
+          <label class="check"><input id="bill-split" type="checkbox" checked> Split 50/50</label>
+          <button id="btn-bill-add" class="primary">Add bill</button>
+        </details>
+        <ul id="bill-list" class="list"></ul>
+      </div>
+
+      <h3 id="sec-tasks">Shared tasks</h3>
+      <div class="card">
+        <p class="muted small">Jobs for the two of you, with who's on it.</p>
+        <div class="row">
+          <input id="task-input" type="text" placeholder="Add a task…" style="flex:1;min-width:0">
+          <select id="task-assignee" style="width:auto"></select>
+          <button id="btn-task-add" class="primary" style="width:auto">Add</button>
+        </div>
+        <ul id="task-list" class="list"></ul>
+      </div>
+
       <h3>Share with your partner</h3>
       <div class="card" id="pair-setup">
         <p class="muted small">Share the list above between two phones. It syncs through a server that only ever sees encrypted data. One of you creates the space; the other joins with the same code. (Needs the free sync server set up once — see the guide.)</p>
