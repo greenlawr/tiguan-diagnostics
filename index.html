@@ -359,9 +359,20 @@
         <label class="field">Partner's email<input id="partner-email" type="email" autocapitalize="off" placeholder="e.g. jess@example.com"></label>
       </div>
 
-      <h3>Shared household</h3>
+      <h3>Shopping &amp; to-do list</h3>
+      <div class="card" id="shared-card">
+        <p class="muted small" id="shared-hint">Add anything — shopping, jobs, reminders. Tick items off when they're done. Connect with your partner below to share this list between your phones.</p>
+        <div class="row">
+          <input id="shared-input" type="text" placeholder="Add an item…" style="flex:1;min-width:0">
+          <button id="btn-shared-add" class="primary" style="width:auto">Add</button>
+        </div>
+        <ul id="shared-list" class="list"></ul>
+        <button id="btn-shared-clear" class="link" hidden>Clear ticked items</button>
+      </div>
+
+      <h3>Share with your partner</h3>
       <div class="card" id="pair-setup">
-        <p class="muted small">A private space you both share. It syncs through a server that only ever sees encrypted data. First, one of you creates it; the other joins with the same code.</p>
+        <p class="muted small">Share the list above between two phones. It syncs through a server that only ever sees encrypted data. One of you creates the space; the other joins with the same code. (Needs the free sync server set up once — see the guide.)</p>
         <label class="field">Sync server address<input id="sync-url" type="url" autocapitalize="off" placeholder="https://evergreen-sync.…workers.dev"></label>
         <div class="row">
           <button id="btn-pair-create" class="primary">Create a shared space</button>
@@ -374,20 +385,10 @@
         <p id="pair-status" class="status" role="status"></p>
       </div>
       <div class="card" id="pair-active" hidden>
-        <div class="line"><div class="name">Shared space active</div><button id="btn-pair-leave" class="del" aria-label="Leave">✕</button></div>
+        <div class="line"><div class="name">Sharing is on</div><button id="btn-pair-leave" class="del" aria-label="Stop sharing">✕</button></div>
         <p class="muted small">Code: <span id="pair-code-show"></span></p>
         <button id="btn-sync" class="primary">Sync now</button>
         <p id="sync-status" class="status" role="status"></p>
-      </div>
-
-      <div class="card" id="shared-card" hidden>
-        <h2>Shared list</h2>
-        <p class="muted small">Shopping, to-dos, anything for the two of you. Changes sync automatically.</p>
-        <div class="row">
-          <input id="shared-input" type="text" placeholder="Add an item…" style="flex:1;min-width:0">
-          <button id="btn-shared-add" class="primary" style="width:auto">Add</button>
-        </div>
-        <ul id="shared-list" class="list"></ul>
       </div>
     </section>
 

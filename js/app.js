@@ -1414,12 +1414,9 @@ function refreshPairUI() {
   const isPaired = paired();
   $('pair-setup').hidden = isPaired;
   $('pair-active').hidden = !isPaired;
-  $('shared-card').hidden = !isPaired;
-  if (isPaired) {
-    $('pair-code-show').textContent = s.householdCode;
-    renderShared();
-  }
+  if (isPaired) $('pair-code-show').textContent = s.householdCode;
   if (s.syncUrl) $('sync-url').value = s.syncUrl;
+  renderShared(); // the list works locally whether or not sharing is on
 }
 $('sync-url').addEventListener('input', (e) => saveSettings({ syncUrl: e.target.value.trim() }));
 $('btn-pair-create').addEventListener('click', () => {
@@ -1493,7 +1490,15 @@ function renderShared() {
     list.append(el('li', {}, el('label', { class: 'check', style: 'margin:0;flex:1' }, box, label), del));
   }
   if (!visible.length) list.append(el('li', { class: 'muted small', text: 'Nothing on the list.' }));
+  $('btn-shared-clear').hidden = !visible.some((i) => i.done);
 }
+$('btn-shared-clear').addEventListener('click', () => {
+  const all = store.load(SHARED_KEY, {});
+  for (const it of Object.values(all)) if (it.done && !it.deleted) { all[it.id] = { ...it, deleted: true, updatedAt: now() }; }
+  store.save(SHARED_KEY, all);
+  renderShared();
+  scheduleSync();
+});
 $('btn-shared-add').addEventListener('click', () => {
   const text = $('shared-input').value.trim();
   if (!text) return;
