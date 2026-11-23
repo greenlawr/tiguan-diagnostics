@@ -140,6 +140,35 @@
       </div>
     </section>
 
+    <!-- Life admin: documents & renewals vault -->
+    <section id="tab-life" class="tab">
+      <div class="card">
+        <h2>Documents &amp; reminders</h2>
+        <p class="muted">Keep track of anything with an expiry date — passport, driving licence, insurance, warranties, subscriptions. Add a photo if you like. Everything stays on this phone.</p>
+        <details class="inner-form" id="doc-form">
+          <summary>Add a document</summary>
+          <label class="field">Name<input id="doc-label" type="text" placeholder="e.g. Passport"></label>
+          <label class="field">Type
+            <select id="doc-category">
+              <option>Passport</option>
+              <option>Driving licence</option>
+              <option>Insurance</option>
+              <option>Warranty</option>
+              <option>Subscription</option>
+              <option>Membership</option>
+              <option>Other</option>
+            </select>
+          </label>
+          <label class="field">Expiry / renewal date<input id="doc-expiry" type="date"></label>
+          <label class="field">Note (optional)<input id="doc-note" type="text" placeholder="e.g. renews automatically"></label>
+          <label class="field">Photo (optional)<input id="doc-photo" type="file" accept="image/*"></label>
+          <button id="btn-doc-add" class="primary">Save document</button>
+          <p class="muted small">Photos are shrunk and kept only on this phone.</p>
+        </details>
+      </div>
+      <div id="docs-out"></div>
+    </section>
+
     <!-- Trips -->
     <section id="tab-trips" class="tab">
       <div class="card">
@@ -273,6 +302,7 @@
   <nav class="tabs" aria-label="Sections">
     <button data-tab="check" class="active">Check</button>
     <button data-tab="car">Car</button>
+    <button data-tab="life">Life</button>
     <button data-tab="live">Live</button>
     <button data-tab="trips">Trips</button>
     <button data-tab="help">Help</button>

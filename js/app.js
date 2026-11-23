@@ -9,7 +9,7 @@ import { runHealthCheck, reportText, stateText, diffReports } from './report.js'
 import { diagnoseAppConnect, dealerSummary, CHECKLIST } from './appconnect.js';
 import { Trip, fuelRateFrom5E, fuelRateFromMaf, mpgUk } from './trip.js';
 import { calendarUrl, cleanReg, GOV_MOT_HISTORY, GOV_TAX_CHECK } from './vehicle.js';
-import { fuelStats, renewals, parkMapsUrl, timeAgo, mileageSummary, mileageExport } from './garage.js';
+import { fuelStats, renewals, countdown, parkMapsUrl, timeAgo, mileageSummary, mileageExport } from './garage.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -931,6 +931,97 @@ function initCarTab() {
   renderMileage();
 }
 
+// ---------- life admin: documents & reminders ----------
+const DOCS_KEY = 'tiguan-docs';
+
+/** Shrink an image file to a small JPEG data URL so it fits in on-device storage. */
+function compressImage(file, maxSize = 900, quality = 0.6) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('Could not read the photo.'));
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error('That file is not an image.'));
+      img.onload = () => {
+        const scale = Math.min(1, maxSize / Math.max(img.width, img.height));
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.round(img.width * scale);
+        canvas.height = Math.round(img.height * scale);
+        canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+function renderDocs() {
+  const docs = store.load(DOCS_KEY, []);
+  const out = $('docs-out');
+  out.replaceChildren();
+  if (!docs.length) {
+    out.append(el('p', { class: 'muted small', text: 'No documents yet. Add one above to start getting reminders.' }));
+    return;
+  }
+  const withDays = docs.map((d) => ({ d, cd: d.expiry ? countdown(d.expiry, d.label) : null }));
+  withDays.sort((a, b) => (a.cd ? a.cd.days : Infinity) - (b.cd ? b.cd.days : Infinity));
+  for (const { d, cd } of withDays) {
+    const head = el('div', { class: 'line' },
+      el('div', {}, el('div', { class: 'name', text: d.label }), el('div', { class: 'sub', text: d.category + (d.note ? ' · ' + d.note : '') })),
+      cd ? el('span', { class: 'tag ' + cd.level, text: cd.text.replace(d.label + ' ', '') }) : el('span', { class: 'tag dim', text: 'No date' })
+    );
+    const card = el('div', { class: 'card doc' }, head);
+    if (d.photo) {
+      const img = el('img', { class: 'doc-photo', src: d.photo, alt: d.label });
+      img.addEventListener('click', () => window.open(d.photo, '_blank'));
+      card.append(img);
+    }
+    const del = el('button', { class: 'link del-wide', text: 'Delete' });
+    del.addEventListener('click', () => {
+      if (!confirm(`Delete "${d.label}"?`)) return;
+      store.save(DOCS_KEY, store.load(DOCS_KEY, []).filter((x) => x.id !== d.id));
+      renderDocs();
+    });
+    card.append(del);
+    out.append(card);
+  }
+}
+
+$('btn-doc-add').addEventListener('click', async () => {
+  const label = $('doc-label').value.trim();
+  if (!label) {
+    alert('Please give the document a name.');
+    return;
+  }
+  const btn = $('btn-doc-add');
+  btn.disabled = true;
+  try {
+    let photo = null;
+    const file = $('doc-photo').files[0];
+    if (file) photo = await compressImage(file);
+    const entry = { id: Date.now(), label, category: $('doc-category').value, expiry: $('doc-expiry').value, note: $('doc-note').value.trim(), photo };
+    try {
+      store.save(DOCS_KEY, [entry, ...store.load(DOCS_KEY, [])]);
+    } catch {
+      alert('Could not save — this phone may be low on storage. Try without a photo.');
+      return;
+    }
+    // localStorage.setItem can throw inside store.save (which swallows it); verify it saved.
+    if (!store.load(DOCS_KEY, []).some((x) => x.id === entry.id)) {
+      alert('Could not save the photo — storage may be full. Try a smaller photo or none.');
+      return;
+    }
+    for (const id of ['doc-label', 'doc-note', 'doc-expiry', 'doc-photo']) $(id).value = '';
+    $('doc-form').open = false;
+    renderDocs();
+  } catch (e) {
+    alert(e.message || 'Could not add the document.');
+  } finally {
+    btn.disabled = false;
+  }
+});
+
 // ---------- text size ----------
 const TEXT_KEY = 'tiguan-textsize';
 function applyTextSize(size) {
@@ -964,6 +1055,7 @@ setConnected(false);
 renderHistory();
 renderTrips();
 initCarTab();
+renderDocs();
 try {
   applyTextSize(localStorage.getItem(TEXT_KEY) || 'normal');
 } catch {

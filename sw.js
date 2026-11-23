@@ -1,5 +1,5 @@
 // Offline support: network first (so updates arrive), cached copy when there is no signal.
-const CACHE = 'tiguan-diagnostics-v6';
+const CACHE = 'tiguan-diagnostics-v7';
 const FILES = [
   './', 'index.html', 'styles.css', 'icon.svg', 'manifest.webmanifest',
   'js/app.js', 'js/appconnect.js', 'js/ble.js', 'js/dtc.js', 'js/elm.js', 'js/explain.js', 'js/garage.js',
