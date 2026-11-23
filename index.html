@@ -199,7 +199,7 @@
           </label>
           <label class="field">Expiry / renewal date<input id="doc-expiry" type="date"></label>
           <label class="field">Note (optional)<input id="doc-note" type="text" placeholder="e.g. renews automatically"></label>
-          <label class="field">Photo (optional)<input id="doc-photo" type="file" accept="image/*"></label>
+          <label class="field">Photo (optional) — opens the camera, or pick a file<input id="doc-photo" type="file" accept="image/*" capture="environment"></label>
           <button id="btn-doc-add" class="primary">Save document</button>
           <p class="muted small">Photos are shrunk and kept only on this phone.</p>
         </details>
@@ -274,7 +274,7 @@
             <label class="field">Value (£)<input id="inv-value" type="number" inputmode="numeric" placeholder="optional"></label>
           </div>
           <label class="field">Serial number<input id="inv-serial" type="text" placeholder="optional"></label>
-          <label class="field">Photo<input id="inv-photo" type="file" accept="image/*"></label>
+          <label class="field">Photo — opens the camera, or pick a file<input id="inv-photo" type="file" accept="image/*" capture="environment"></label>
           <button id="btn-inv-add" class="primary">Add item</button>
         </details>
         <ul id="inv-list" class="list"></ul>
