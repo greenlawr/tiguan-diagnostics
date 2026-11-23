@@ -1990,10 +1990,13 @@ $('btn-import-preview').addEventListener('click', () => {
   if (Object.keys(c.vehicle).length) bits.push('car details');
   setStatus('import-status', `Ready to add: ${bits.join(', ') || 'nothing'}.${errs ? ` ${errs} line(s) not understood will be skipped.` : ''}`);
 });
-$('btn-import-apply').addEventListener('click', () => {
-  if (!importParsed) return;
-  const r = importParsed;
-  const add = (key, items, map) => { if (items.length) store.save(key, [...items.map(map), ...store.load(key, [])]); };
+// Apply a parsed import to the vault. Shared by the paste-in button and the
+// one-tap morning link. Returns the count added and an undo() that fully
+// restores the touched collections to how they were.
+function applyParsedImport(r) {
+  const snapshot = {};
+  const snap = (key, def) => { if (!(key in snapshot)) snapshot[key] = JSON.parse(JSON.stringify(store.load(key, def))); };
+  const add = (key, items, map) => { if (items.length) { snap(key, []); store.save(key, [...items.map(map), ...store.load(key, [])]); } };
   add(SUBS_KEY, r.subscriptions, (s) => ({ id: uid(), ...s }));
   add(UTIL_KEY, r.utilities, (u) => ({ id: uid(), ...u }));
   add(DOCS_KEY, r.documents, (d) => ({ id: uid(), ...d }));
@@ -2001,24 +2004,48 @@ $('btn-import-apply').addEventListener('click', () => {
   add(LOYAL_KEY, r.loyalty, (c) => ({ id: uid(), ...c }));
   add(CHECK_KEY, r.checkups, (c) => ({ id: uid(), ...c }));
   add(MAINT_KEY, r.maintenance, (m) => ({ id: uid(), ...m }));
+  let shoppingAdded = false;
   if (r.shopping.length) {
+    snap(SHARED_KEY, {});
     const all = store.load(SHARED_KEY, {});
     for (const text of r.shopping) { const id = 's' + uid(); all[id] = { id, text, done: false, updatedAt: now(), deleted: false }; }
     store.save(SHARED_KEY, all);
+    shoppingAdded = true;
     scheduleSync();
   }
+  let vehicleSnap = null;
   if (Object.keys(r.vehicle).length) {
+    vehicleSnap = JSON.parse(JSON.stringify(loadVehicle()));
     const v = loadVehicle();
     for (const [k, val] of Object.entries(r.vehicle)) if (val) v[k] = k === 'reg' ? cleanReg(val) : val;
     saveVehicle(v);
   }
-  renderSubs(); renderUtilities(); renderDocs(); renderDeliveries(); renderLoyalty(); renderCheckups(); renderMaint(); renderShared(); initCarTab(); renderHome();
-  const n = importCount(r);
+  const rerender = () => { renderSubs(); renderUtilities(); renderDocs(); renderDeliveries(); renderLoyalty(); renderCheckups(); renderMaint(); renderShared(); initCarTab(); renderHome(); };
+  rerender();
+  const undo = () => {
+    for (const [key, val] of Object.entries(snapshot)) store.save(key, val);
+    if (vehicleSnap) saveVehicle(vehicleSnap);
+    if (shoppingAdded) scheduleSync();
+    rerender();
+  };
+  return { count: importCount(r), undo };
+}
+
+$('btn-import-apply').addEventListener('click', () => {
+  if (!importParsed) return;
+  const { count } = applyParsedImport(importParsed);
   importParsed = null;
   $('import-text').value = '';
   $('btn-import-apply').hidden = true;
-  setStatus('import-status', `Added ${n} item${n === 1 ? '' : 's'}. ✓`);
+  setStatus('import-status', `Added ${count} item${count === 1 ? '' : 's'}. ✓`);
 });
+
+// Decode a base64url (UTF-8) payload used by one-tap import links.
+function decodeImportPayload(s) {
+  const b64 = s.replace(/-/g, '+').replace(/_/g, '/');
+  const bin = atob(b64 + '==='.slice((b64.length + 3) % 4));
+  return decodeURIComponent(Array.from(bin, (c) => '%' + c.charCodeAt(0).toString(16).padStart(2, '0')).join(''));
+}
 
 // ---------- text size ----------
 const TEXT_KEY = 'tiguan-textsize';
@@ -2245,8 +2272,24 @@ function handleLaunchParams() {
   const q = new URLSearchParams(location.search);
   if (![...q.keys()].length) return;
   const action = q.get('action');
+  const importPayload = q.get('import');
   const hasShared = q.has('title') || q.has('text') || q.has('url');
   history.replaceState(null, '', location.pathname); // don't repeat on refresh
+  if (importPayload) {
+    try {
+      const r = parseImport(decodeImportPayload(importPayload));
+      if (importCount(r)) {
+        const { count, undo } = applyParsedImport(r);
+        if (r.deliveries.length) goLife('deliveries');
+        toast(`Added ${count} item${count === 1 ? '' : 's'} from your link ✓`, { actionLabel: 'Undo', onAction: undo, ms: 8000 });
+      } else {
+        toast('That link had nothing new to add.');
+      }
+    } catch {
+      toast('Sorry — that import link could not be read.');
+    }
+    return;
+  }
   if (hasShared) {
     const shared = parseShared({ title: q.get('title') || '', text: q.get('text') || '', url: q.get('url') || '' });
     goTab('life');
