@@ -17,6 +17,7 @@ import { biometricAvailable, biometricConfigured, enableBiometric, unlockBiometr
 import { generateHouseholdCode, normalizeCode } from './household.js';
 import { syncShared } from './sync.js';
 import { savePhoto, loadPhoto, deletePhoto, exportAllPhotos, importAllPhotos } from './photos.js';
+import { parseImport, importCount } from './import.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -1726,11 +1727,14 @@ $('btn-shared-clear').addEventListener('click', () => {
   scheduleSync();
 });
 $('btn-shared-add').addEventListener('click', () => {
-  const text = $('shared-input').value.trim();
-  if (!text) return;
+  const raw = $('shared-input').value.trim();
+  if (!raw) return;
+  const texts = raw.split(',').map((s) => s.trim()).filter(Boolean); // "milk, bread, eggs" -> 3 items
   const all = store.load(SHARED_KEY, {});
-  const id = 's' + now() + Math.random().toString(36).slice(2, 6);
-  all[id] = { id, text, done: false, updatedAt: now(), deleted: false };
+  for (const text of texts) {
+    const id = 's' + now() + Math.random().toString(36).slice(2, 6) + Object.keys(all).length;
+    all[id] = { id, text, done: false, updatedAt: now(), deleted: false };
+  }
   store.save(SHARED_KEY, all);
   $('shared-input').value = '';
   renderShared();
@@ -1753,6 +1757,55 @@ function initLifeSections() {
   refreshPairUI();
   if (paired()) syncNow();
 }
+
+// ---------- quick import (paste many entries at once) ----------
+let importParsed = null;
+let idCounter = 0;
+const uid = () => Date.now() * 1000 + (idCounter++);
+$('btn-import-preview').addEventListener('click', () => {
+  importParsed = parseImport($('import-text').value);
+  const n = importCount(importParsed);
+  const errs = importParsed.errors.length;
+  $('btn-import-apply').hidden = n === 0;
+  if (!n && !errs) return setStatus('import-status', 'Nothing to add — paste some lines first.');
+  const bits = [];
+  const c = importParsed;
+  const label = (arr, name) => arr.length && bits.push(`${arr.length} ${name}`);
+  label(c.subscriptions, 'subscription(s)'); label(c.utilities, 'utility plan(s)'); label(c.documents, 'document(s)');
+  label(c.deliveries, 'delivery/deliveries'); label(c.loyalty, 'loyalty card(s)'); label(c.checkups, 'check-up(s)');
+  label(c.maintenance, 'maintenance item(s)'); label(c.shopping, 'shopping item(s)');
+  if (Object.keys(c.vehicle).length) bits.push('car details');
+  setStatus('import-status', `Ready to add: ${bits.join(', ') || 'nothing'}.${errs ? ` ${errs} line(s) not understood will be skipped.` : ''}`);
+});
+$('btn-import-apply').addEventListener('click', () => {
+  if (!importParsed) return;
+  const r = importParsed;
+  const add = (key, items, map) => { if (items.length) store.save(key, [...items.map(map), ...store.load(key, [])]); };
+  add(SUBS_KEY, r.subscriptions, (s) => ({ id: uid(), ...s }));
+  add(UTIL_KEY, r.utilities, (u) => ({ id: uid(), ...u }));
+  add(DOCS_KEY, r.documents, (d) => ({ id: uid(), ...d }));
+  add(DELIVERIES_KEY, r.deliveries, (d) => ({ id: uid(), done: false, ...d }));
+  add(LOYAL_KEY, r.loyalty, (c) => ({ id: uid(), ...c }));
+  add(CHECK_KEY, r.checkups, (c) => ({ id: uid(), ...c }));
+  add(MAINT_KEY, r.maintenance, (m) => ({ id: uid(), ...m }));
+  if (r.shopping.length) {
+    const all = store.load(SHARED_KEY, {});
+    for (const text of r.shopping) { const id = 's' + uid(); all[id] = { id, text, done: false, updatedAt: now(), deleted: false }; }
+    store.save(SHARED_KEY, all);
+    scheduleSync();
+  }
+  if (Object.keys(r.vehicle).length) {
+    const v = loadVehicle();
+    for (const [k, val] of Object.entries(r.vehicle)) if (val) v[k] = k === 'reg' ? cleanReg(val) : val;
+    saveVehicle(v);
+  }
+  renderSubs(); renderUtilities(); renderDocs(); renderDeliveries(); renderLoyalty(); renderCheckups(); renderMaint(); renderShared(); initCarTab(); renderHome();
+  const n = importCount(r);
+  importParsed = null;
+  $('import-text').value = '';
+  $('btn-import-apply').hidden = true;
+  setStatus('import-status', `Added ${n} item${n === 1 ? '' : 's'}. ✓`);
+});
 
 // ---------- text size ----------
 const TEXT_KEY = 'tiguan-textsize';

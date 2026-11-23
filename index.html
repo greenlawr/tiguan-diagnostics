@@ -483,6 +483,20 @@
         <p>The socket is under the dashboard on the driver's side, above the pedals. The adapter only fits one way round. You can leave it plugged in for a check, but unplug it if the car will be parked for days.</p>
       </details>
 
+      <details class="card" id="import-card">
+        <summary>Quick import (paste to add lots at once)</summary>
+        <p class="muted small">Hate typing? Tell Claude your details in a chat (or ask it to read them from your email), paste the block it gives you here, and it adds everything in one go. One item per line, like:</p>
+        <pre class="rec-text">subscription: Netflix | 10.99 | monthly
+utility: Energy | Octopus | 185 | 2026-12-20
+document: Passport | Passport | 2030-01-01
+mot: 2026-12-20
+shopping: milk, bread, eggs</pre>
+        <textarea id="import-text" rows="6" placeholder="Paste your details here…"></textarea>
+        <button id="btn-import-preview" class="primary">Preview</button>
+        <button id="btn-import-apply" hidden>Add them</button>
+        <p id="import-status" class="status" role="status"></p>
+      </details>
+
       <details class="card" id="security-card">
         <summary>Security &amp; backup</summary>
         <p class="muted">Your data is encrypted on this phone with your passphrase. It never leaves the device. There is no cloud copy, so keep a backup and don't forget your passphrase — it can't be recovered.</p>

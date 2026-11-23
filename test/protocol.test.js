@@ -603,3 +603,37 @@ test('photos encrypt/decrypt round-trip and reject wrong key', async () => {
   const other = await wc2.subtle.generateKey({ name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt']);
   await assert.rejects(decryptPhoto(blob, other));
 });
+
+// ---------- quick import parser ----------
+import { parseImport, importCount } from '../js/import.js';
+
+test('parseImport handles the documented formats', () => {
+  const text = [
+    'subscription: Netflix | 10.99 | monthly',
+    'utility: Energy | Octopus | 185 | 2026-12-20',
+    'document: Passport | Passport | 2030-01-01',
+    'delivery: Shoes | Evri | H00ABC | 2026-11-28',
+    'loyalty: Tesco | 634004',
+    'checkup: Dentist | 2026-06-01 | 6',
+    'maintenance: Boiler service | 2026-12-05',
+    'shopping: milk, bread, eggs',
+    'mot: 2026-12-20',
+    'reg: AB17 CDE',
+    '# a comment, ignored',
+    'gibberish line',
+  ].join('\n');
+  const r = parseImport(text);
+  assert.equal(r.subscriptions[0].name, 'Netflix');
+  assert.equal(r.subscriptions[0].cost, 10.99);
+  assert.equal(r.utilities[0].renewal, '2026-12-20');
+  assert.equal(r.documents[0].expiry, '2030-01-01');
+  assert.equal(r.deliveries[0].tracking, 'H00ABC');
+  assert.equal(r.loyalty[0].number, '634004');
+  assert.equal(r.checkups[0].interval, 6);
+  assert.equal(r.maintenance[0].date, '2026-12-05');
+  assert.deepEqual(r.shopping, ['milk', 'bread', 'eggs']);
+  assert.equal(r.vehicle.mot, '2026-12-20');
+  assert.equal(r.vehicle.reg, 'AB17 CDE');
+  assert.deepEqual(r.errors, ['gibberish line']);
+  assert.equal(importCount(r), 1 + 1 + 1 + 1 + 1 + 1 + 1 + 3 + 2); // + reg & mot = 2 vehicle keys
+});
