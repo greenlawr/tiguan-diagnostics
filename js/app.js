@@ -1000,25 +1000,44 @@ $('btn-scan-passport').addEventListener('click', (e) => { e.preventDefault(); $(
 $('passport-photo').addEventListener('change', async (e) => {
   const file = e.target.files[0];
   if (!file) return;
-  setStatus('passport-status', 'Reading the passport… this can take a few seconds.');
+  $('scan-ocr').hidden = true;
+  setStatus('passport-status', 'Reading on your phone… this can take a few seconds.');
   try {
     const { parseMRZ } = await import('./mrz.js');
     const T = await loadTesseract();
     const { data } = await T.recognize(file, 'eng');
     const mrz = parseMRZ(data.text);
-    if (!mrz || !mrz.number) throw new Error('readfail');
-    if (mrz.name) $('doc-label').value = mrz.name;
-    if (mrz.expiry) $('doc-expiry').value = mrz.expiry;
-    $('doc-note').value = `Passport no. ${mrz.number}${mrz.nationality ? ' · ' + mrz.nationality : ''}`;
-    $('doc-category').value = 'Passport';
-    setStatus('passport-status', `Found: ${mrz.name || 'name'}, expires ${mrz.expiry}. Please check it's right before saving.`);
+    if (mrz && mrz.number) {
+      // Passport: the machine-readable zone decodes reliably, so fill directly.
+      if (mrz.name) $('doc-label').value = mrz.name;
+      if (mrz.expiry) $('doc-expiry').value = mrz.expiry;
+      $('doc-note').value = `Passport no. ${mrz.number}${mrz.nationality ? ' · ' + mrz.nationality : ''}`;
+      $('doc-category').value = 'Passport';
+      setStatus('passport-status', `Found: ${mrz.name || 'name'}, expires ${mrz.expiry}. Please check it before saving.`);
+      return;
+    }
+    // Any other document: show the recognised text to hand to Claude.
+    const text = (data.text || '').trim();
+    if (!text) throw new Error('readfail');
+    $('scan-ocr-text').textContent = text;
+    $('scan-ocr').hidden = false;
+    setStatus('passport-status', 'Read the text below. Copy it and paste it to Claude to turn it into details you can import.');
   } catch (err) {
-    log('info', 'Passport scan: ' + err.message);
+    log('info', 'Document scan: ' + err.message);
     setStatus('passport-status', err.message === 'readfail'
-      ? 'Couldn\'t read it. Lay the passport flat in good light, fill the frame with the photo page, and try again — or type the details in.'
+      ? 'Couldn\'t read it. Lay it flat in good light, fill the frame, and try again.'
       : err.message, true);
   } finally {
     e.target.value = '';
+  }
+});
+$('btn-scan-copy').addEventListener('click', async () => {
+  try {
+    await navigator.clipboard.writeText($('scan-ocr-text').textContent);
+    $('btn-scan-copy').textContent = 'Copied — paste it to Claude';
+    setTimeout(() => ($('btn-scan-copy').textContent = 'Copy text for Claude'), 2500);
+  } catch {
+    $('btn-scan-copy').textContent = 'Copy failed — select the text above';
   }
 });
 
