@@ -917,6 +917,47 @@ function initCarTab() {
 // ---------- life admin: documents & reminders ----------
 const DOCS_KEY = 'tiguan-docs';
 
+// On-device passport scanner. Tesseract runs the OCR locally; the image never
+// leaves the phone. The library is fetched once (needs internet the first time).
+let tesseractPromise = null;
+function loadTesseract() {
+  if (tesseractPromise) return tesseractPromise;
+  tesseractPromise = new Promise((resolve, reject) => {
+    if (window.Tesseract) return resolve(window.Tesseract);
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/5.1.1/tesseract.min.js';
+    s.onload = () => resolve(window.Tesseract);
+    s.onerror = () => { tesseractPromise = null; reject(new Error('Could not load the scanner (it needs internet the first time).')); };
+    document.head.appendChild(s);
+  });
+  return tesseractPromise;
+}
+$('btn-scan-passport').addEventListener('click', (e) => { e.preventDefault(); $('passport-photo').click(); });
+$('passport-photo').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  setStatus('passport-status', 'Reading the passport… this can take a few seconds.');
+  try {
+    const { parseMRZ } = await import('./mrz.js');
+    const T = await loadTesseract();
+    const { data } = await T.recognize(file, 'eng');
+    const mrz = parseMRZ(data.text);
+    if (!mrz || !mrz.number) throw new Error('readfail');
+    if (mrz.name) $('doc-label').value = mrz.name;
+    if (mrz.expiry) $('doc-expiry').value = mrz.expiry;
+    $('doc-note').value = `Passport no. ${mrz.number}${mrz.nationality ? ' · ' + mrz.nationality : ''}`;
+    $('doc-category').value = 'Passport';
+    setStatus('passport-status', `Found: ${mrz.name || 'name'}, expires ${mrz.expiry}. Please check it's right before saving.`);
+  } catch (err) {
+    log('info', 'Passport scan: ' + err.message);
+    setStatus('passport-status', err.message === 'readfail'
+      ? 'Couldn\'t read it. Lay the passport flat in good light, fill the frame with the photo page, and try again — or type the details in.'
+      : err.message, true);
+  } finally {
+    e.target.value = '';
+  }
+});
+
 /** Shrink an image file to a small JPEG data URL so it fits in on-device storage. */
 function compressImage(file, maxSize = 900, quality = 0.6) {
   return new Promise((resolve, reject) => {
@@ -1027,6 +1068,21 @@ function renderDashboard() {
       )));
     }
     out.append(el('div', { class: 'card' }, el('h2', { text: 'Coming up' }), list));
+  }
+
+  // "Time to compare" nudge for utilities renewing within ~30 days.
+  const dueUtils = store.load(UTIL_KEY, []).filter((u) => {
+    if (!u.renewal) return false;
+    const cd = countdown(u.renewal, u.type);
+    return cd && cd.days <= 30;
+  });
+  if (dueUtils.length) {
+    const card = el('div', { class: 'card change' }, el('h2', { text: 'Time to compare' }),
+      el('p', { class: 'muted small', text: 'A renewal is coming up — switching now is when you save the most. Tap to compare, or ask Claude for a shortlist.' }));
+    for (const u of dueUtils) {
+      card.append(el('a', { class: 'btn-a', href: COMPARE[u.type] || ('https://www.google.com/search?q=' + encodeURIComponent('compare ' + u.type + ' deals')), target: '_blank', rel: 'noopener', text: `Compare ${u.type}${u.provider ? ' (' + u.provider + ')' : ''}` }));
+    }
+    out.append(card);
   }
 }
 

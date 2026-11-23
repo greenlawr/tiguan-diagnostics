@@ -567,3 +567,26 @@ test('two partners converge through the server, which stores only ciphertext', a
     server.close();
   }
 });
+
+// ---------- passport MRZ parsing ----------
+import { parseMRZ, checkDigit } from '../js/mrz.js';
+
+test('parses a standard TD3 passport MRZ', () => {
+  const mrz = 'P<UTOERIKSSON<<ANNA<MARIA<<<<<<<<<<<<<<<<<<<\nL898902C36UTO7408122F1204159ZE184226B<<<<<10';
+  const r = parseMRZ(mrz);
+  assert.equal(r.number, 'L898902C3');
+  assert.equal(r.expiry, '2012-04-15');
+  assert.equal(r.dob, '1974-08-12');
+  assert.equal(r.surname, 'ERIKSSON');
+  assert.equal(r.given, 'ANNA MARIA');
+  assert.equal(r.nationality, 'UTO');
+  assert.equal(r.valid, true);
+  assert.equal(checkDigit('L898902C3'), 6);
+});
+
+test('parseMRZ tolerates noise and missing data', () => {
+  const noisy = 'SOME HEADER TEXT\nblurry line\nP<UTOERIKSSON<<ANNA<MARIA<<<<<<<<<<<<<<<<<<<\nL898902C36UTO7408122F1204159ZE184226B<<<<<10\nfooter';
+  assert.equal(parseMRZ(noisy).number, 'L898902C3');
+  assert.equal(parseMRZ('nothing useful here'), null);
+  assert.equal(parseMRZ(''), null);
+});

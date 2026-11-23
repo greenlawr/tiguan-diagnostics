@@ -185,6 +185,9 @@
         <p class="muted">Keep track of anything with an expiry date — passport, driving licence, insurance, warranties, subscriptions. Add a photo if you like. Everything stays on this phone.</p>
         <details class="inner-form" id="doc-form">
           <summary>Add a document</summary>
+          <button id="btn-scan-passport" type="button">📷 Scan a passport to fill the details</button>
+          <input id="passport-photo" type="file" accept="image/*" capture="environment" hidden>
+          <p id="passport-status" class="status" role="status"></p>
           <label class="field">Name<input id="doc-label" type="text" placeholder="e.g. Passport"></label>
           <label class="field">Type
             <select id="doc-category">
