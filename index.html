@@ -567,6 +567,8 @@ shopping: milk, bread, eggs</pre>
         <button id="btn-bio-disable" hidden>Turn off fingerprint / Face ID unlock</button>
         <button id="btn-change-pass">Change passphrase</button>
         <button id="btn-lock2">Lock now</button>
+        <label class="check" style="margin-top:14px"><input type="checkbox" id="wipe-after"> <span>Erase Evergreen on this phone after 10 wrong passphrase attempts in a row</span></label>
+        <p class="muted small" style="margin-top:-6px">Stops anyone guessing your passphrase. Off unless you switch it on. Fingerprint / Face ID tries don't count. Save a backup first — private things only come back from a backup.</p>
         <p id="security-status" class="status" role="status"></p>
       </details>
 
@@ -638,7 +640,13 @@ shopping: milk, bread, eggs</pre>
   <summary>If a phone is lost or stolen</summary>
   <p>Your data is encrypted on the phone, so it can't be read without the passphrase. For extra peace of mind, either of you can lock a lost phone out from the other phone: <strong>Life → Sharing &amp; sync → If a phone is lost → Report lost</strong>, then enter the lost phone owner's Evergreen passphrase.</p>
   <p>That cuts it off from your shared lists, calendar and bills straight away, deletes the old copy from your server, and gives you a new sharing code. The next time Evergreen is opened on the lost phone with signal — even just the lock screen — it erases itself.</p>
-  <p>Also turn on your phone's own remote erase: <strong>Find My Device</strong> on Android, <strong>Find My</strong> on iPhone.</p>
+  <p>Optional: <strong>Help → Security &amp; backup → Erase after 10 wrong passphrase attempts</strong> stops anyone guessing your passphrase, even without signal.</p>
+  <p><strong>Turn on your phone's own remote erase too</strong> — it can lock or wipe the whole phone, not just Evergreen:</p>
+  <ul>
+    <li><strong>Android:</strong> Settings → Google → <em>Find My Device</em> → On (and turn on <em>Store recent location</em>). If the phone is lost, go to <strong>google.com/android/find</strong> on any device and choose <em>Factory reset device</em>.</li>
+    <li><strong>iPhone:</strong> Settings → your name → <em>Find My</em> → <em>Find My iPhone</em> → On (and <em>Send Last Location</em>). If the phone is lost, go to <strong>icloud.com/find</strong> and choose <em>Erase This Device</em>.</li>
+  </ul>
+  <p>Do the Evergreen "Report lost" step as well: a phone that's switched off can't be erased remotely until it reconnects, but the moment Evergreen is opened it checks in.</p>
 </details>
 
 <details class="card">

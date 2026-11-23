@@ -2486,9 +2486,11 @@ function showLockScreen() {
   $('lock-error').textContent = '';
   $('lock-pass2').hidden = !setupMode;
   $('lock-reset').hidden = setupMode;
- const wiped = new URLSearchParams(location.search).has('wiped');
+ const wiped = new URLSearchParams(location.search).get('wiped');
   $('lock-intro').textContent = wiped && setupMode
-    ? 'Evergreen was erased on this phone because it was reported lost. If it is yours and you have it back, set a passphrase, then rejoin your shared space with the new code from your partner.'
+    ? (wiped === 'tries'
+      ? `Evergreen was erased on this phone after ${MAX_TRIES} wrong passphrase attempts. Set a new passphrase, restore your backup (Help → Security & backup), and rejoin your shared space with your partner's code.`
+      : 'Evergreen was erased on this phone because it was reported lost. If it is yours and you have it back, set a passphrase, then rejoin your shared space with the new code from your partner.')
     : setupMode
     ? 'Set a passphrase to protect everything you store here. It never leaves this phone, and it can\'t be recovered if you forget it — so make it memorable.'
     : 'Enter your passphrase to unlock your data.';
@@ -2539,9 +2541,11 @@ async function onUnlockSubmit(e) {
     } catch {
       $('lock-submit').disabled = false;
       err.textContent = 'Wrong passphrase. Try again.';
+      noteWrongPassphrase();
       return;
     }
     $('lock-submit').disabled = false;
+    resetWrongPassphrases();
   }
   $('lock-screen').hidden = true;
   await initAll();
@@ -2913,11 +2917,41 @@ async function checkLostStatus(force = false) {
     else if (st.retired && !vault.locked) setStatus('sync-status', 'Your shared space was reset by your partner — ask them for the new code and join again.', true);
   } catch { /* offline — try again next time */ }
 }
-function wipeThisPhone() {
+// Optional: erase after too many wrong passphrases. Kept outside the vault
+// (it has to work on the lock screen). Fingerprint failures don't count — the
+// phone itself limits those.
+const WIPE_TRIES_KEY = 'evergreen-wipe-after';
+const FAILS_KEY = 'evergreen-fails';
+const MAX_TRIES = 10;
+const wipeAfterOn = () => { try { return localStorage.getItem(WIPE_TRIES_KEY) === '1'; } catch { return false; } };
+function noteWrongPassphrase() {
+  if (!wipeAfterOn()) return;
+  let n = 0;
+  try { n = (parseInt(localStorage.getItem(FAILS_KEY), 10) || 0) + 1; localStorage.setItem(FAILS_KEY, String(n)); } catch { return; }
+  if (n >= MAX_TRIES) { wipeThisPhone('tries'); return; }
+  const left = MAX_TRIES - n;
+  if (left <= 5) $('lock-error').textContent = `Wrong passphrase. ${left} ${left === 1 ? 'try' : 'tries'} left before Evergreen erases itself on this phone.`;
+}
+function resetWrongPassphrases() { try { localStorage.removeItem(FAILS_KEY); } catch { /* ignore */ } }
+function refreshWipeAfterUI() {
+  $('wipe-after').checked = wipeAfterOn();
+}
+$('wipe-after').addEventListener('change', (e) => {
+  if (e.target.checked) {
+    if (!confirm(`Erase Evergreen on this phone after ${MAX_TRIES} wrong passphrase attempts in a row?\n\nShared things come back when you rejoin your shared space, but private things (documents, health, money…) only come back from a backup — save one first.`)) { e.target.checked = false; return; }
+    try { localStorage.setItem(WIPE_TRIES_KEY, '1'); } catch { /* ignore */ }
+    resetWrongPassphrases();
+    setStatus('security-status', `On — Evergreen erases itself after ${MAX_TRIES} wrong passphrase attempts in a row.`);
+  } else {
+    try { localStorage.removeItem(WIPE_TRIES_KEY); localStorage.removeItem(FAILS_KEY); } catch { /* ignore */ }
+    setStatus('security-status', 'Off.');
+  }
+});
+function wipeThisPhone(reason = 'lost') {
   try { vault.destroy(); } catch { /* ignore */ }
   try { indexedDB.deleteDatabase('evergreen-media'); } catch { /* ignore */ }
   try { localStorage.clear(); } catch { /* ignore */ }
-  location.replace(location.pathname + '?wiped=1');
+  location.replace(location.pathname + '?wiped=' + reason);
 }
 async function reportLost(d) {
   const s = settings();
@@ -3020,7 +3054,7 @@ function renderLost() {
 
 // ---------- app updates ----------
 // Must match CACHE in sw.js (a test checks this).
-const APP_VERSION = 'evergreen-v48';
+const APP_VERSION = 'evergreen-v49';
 let updateReady = false;
 async function checkForUpdate(manual = false) {
   try {
@@ -3089,6 +3123,7 @@ async function initAll() {
   renderHome();
   $('conn').style.display = 'none'; // Home is the default screen
   refreshBiometricButtons();
+  refreshWipeAfterUI();
   if (!bluetoothSupported()) {
     $('unsupported').hidden = false;
     $('btn-connect').disabled = true;
