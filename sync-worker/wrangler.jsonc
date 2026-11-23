@@ -4,6 +4,7 @@
 // shared data would be disconnected. (The namespace ID is not a secret.)
 {
   "name": "evergreen-sync",
+  "account_id": "09894f79612b96535a4bb359bff33fab",
   "main": "worker.js",
   "compatibility_date": "2025-09-01",
   "workers_dev": true,
