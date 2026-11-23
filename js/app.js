@@ -18,6 +18,7 @@ import { generateHouseholdCode, normalizeCode, householdId, writeToken } from '.
 import { parseICS, expandEvents } from './ical.js';
 import { makeVerifier, checkVerifier } from './lost.js';
 import { ageText, nextBirthday, mask, nhsNumberValid } from './family.js';
+import { groupEvents, sameEvent } from './eventmatch.js';
 import { syncShared } from './sync.js';
 import { savePhoto, loadPhoto, deletePhoto, exportAllPhotos, importAllPhotos } from './photos.js';
 import { parseImport, importCount } from './import.js';
@@ -1089,25 +1090,32 @@ $('btn-scan-copy').addEventListener('click', async () => {
 });
 
 /** Shrink an image file to a small JPEG data URL so it fits in on-device storage. */
-function compressImage(file, maxSize = 900, quality = 0.6) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () => reject(new Error('Could not read the photo.'));
-    reader.onload = () => {
-      const img = new Image();
-      img.onerror = () => reject(new Error('That file is not an image.'));
-      img.onload = () => {
-        const scale = Math.min(1, maxSize / Math.max(img.width, img.height));
-        const canvas = document.createElement('canvas');
-        canvas.width = Math.round(img.width * scale);
-        canvas.height = Math.round(img.height * scale);
-        canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
-        resolve(canvas.toDataURL('image/jpeg', quality));
-      };
-      img.src = reader.result;
-    };
-    reader.readAsDataURL(file);
-  });
+// Shrink a photo to a JPEG data URL. Tries the browser's fast decoder first
+// (which also respects the photo's rotation), then a plain <img>.
+async function compressImage(file, maxSize = 900, quality = 0.6) {
+  const heic = /hei[cf]/i.test(file.type) || /\.hei[cf]$/i.test(file.name || '');
+  let source = null;
+  try { source = await createImageBitmap(file, { imageOrientation: 'from-image' }); } catch { /* try an <img> instead */ }
+  if (!source) {
+    const url = URL.createObjectURL(file);
+    try {
+      source = await new Promise((resolve, reject) => { const img = new Image(); img.onload = () => resolve(img); img.onerror = reject; img.src = url; });
+    } catch {
+      throw new Error(heic
+        ? "This phone's browser can't open HEIC photos. In your camera settings turn off 'High efficiency pictures' (Samsung) or choose 'Most Compatible' (iPhone) — or take a screenshot of the photo and add that."
+        : "Couldn't open that photo — try another, or take a screenshot of it and add that.");
+    } finally {
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+  }
+  const w = source.width, h = source.height;
+  const scale = Math.min(1, maxSize / Math.max(w, h));
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.round(w * scale));
+  canvas.height = Math.max(1, Math.round(h * scale));
+  canvas.getContext('2d').drawImage(source, 0, 0, canvas.width, canvas.height);
+  if (source.close) source.close();
+  return canvas.toDataURL('image/jpeg', quality);
 }
 
 // ---------- deliveries ----------
@@ -1241,7 +1249,7 @@ function upcomingEvents(days = 7) {
     if (d >= today && d < horizon) rows.push({ id: 'bday-' + c.id, title: `🎂 ${c.name}'s birthday${nb.turning ? ` (${nb.turning})` : ''}`, date: nb.date, time: '', who: 'Birthdays', virtual: true });
   }
   rows.sort((a, b) => ((eventStart(a)?.getTime() || 0) - (eventStart(b)?.getTime() || 0)));
-  return rows;
+  return groupEvents(rows); // the same event in both calendars (or an old copy) shows once
 }
 /** Drop events whose day has passed, so the store doesn't grow forever. */
 function pruneEvents() {
@@ -1274,12 +1282,13 @@ const ADDED_HERE = '#d98a00';
 function personColour(who) {
   if (!who) return ADDED_HERE;
   if (who === 'Birthdays') return '#8a4fd6';
+  if (who === 'Both') return '#2b6cd6'; // in both your calendars
   return who === myName() ? '#1f9a5d' : '#d6457a'; // you green, your partner pink
 }
 const whenText = (e) => (/^\d/.test((e.time || '').trim()) ? e.time.trim() : 'All day');
 function eventCard(e, compact = false) {
   const card = el('button', { class: 'cal-ev' + (compact ? ' compact' : '') },
-    el('div', { class: 'cal-ev-when', text: whenText(e) + (e.who ? ` · ${e.who}` : '') }),
+    el('div', { class: 'cal-ev-when', text: whenText(e) + (e.who ? ` · ${e.who === 'Both' ? 'Both of you' : e.who}` : '') }),
     el('div', { class: 'cal-ev-title', text: e.title || 'Event' }),
     e.where ? el('div', { class: 'cal-ev-where', text: e.where }) : null);
   card.style.setProperty('--c', personColour(e.who));
@@ -1289,7 +1298,7 @@ function eventCard(e, compact = false) {
 function eventCards(rows, compact) { const box = el('div', { class: 'cal-evs' }); for (const e of rows) box.append(eventCard(e, compact)); return box; }
 function showEvent(e) {
   const d = new Date(e.date + 'T00:00:00');
-  const tag = el('div', { class: 'sheet-tag', text: e.who ? `${e.who}'s calendar` : 'Added in Evergreen' });
+  const tag = el('div', { class: 'sheet-tag', text: e.who === 'Both' ? `In both calendars — ${e.people.join(' & ')}` : e.who === 'Birthdays' ? 'Birthday from Family' : e.who ? `${e.who}'s calendar` : 'Added in Evergreen' });
   tag.style.setProperty('--c', personColour(e.who));
   const nodes = [tag, el('h2', { text: e.title || 'Event' }),
     el('p', { class: 'muted', text: `${d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })} · ${whenText(e)}` })];
@@ -1342,8 +1351,9 @@ function renderCalendar() {
   const today = todayISO();
   const all = upcomingEvents(CAL_DAYS);
   // Legend: whose events are on the calendar (you first, "Added here" last)
-  const people = [...new Set(all.map((e) => e.who || ''))].sort((x, y) => (x === myName() ? -1 : y === myName() ? 1 : !x ? 1 : !y ? -1 : x.localeCompare(y)));
-  $('cal-legend').replaceChildren(...people.map((p) => { const k = el('span', { class: 'cal-key', text: p || 'Added here' }); k.style.setProperty('--c', personColour(p)); return k; }));
+  const rank = (p) => (p === myName() ? 0 : p === 'Both' ? 2 : p === 'Birthdays' ? 3 : !p ? 4 : 1); // you, partner, both, birthdays, added here
+  const people = [...new Set(all.map((e) => e.who || ''))].sort((x, y) => rank(x) - rank(y) || x.localeCompare(y));
+  $('cal-legend').replaceChildren(...people.map((p) => { const k = el('span', { class: 'cal-key', text: p === 'Both' ? 'Both of you' : p || 'Added here' }); k.style.setProperty('--c', personColour(p)); return k; }));
   // Day strip: the next 14 days, with a dot for each person who has something on
   const strip = $('cal-strip');
   strip.replaceChildren();
@@ -2175,7 +2185,7 @@ function dedupeShared() {
   let removed = 0;
   for (const [type, keyFn] of [['delivery', deliveryKey], ['event', eventKey]]) {
     const seen = new Set();
-    for (const it of sharedItems(type).sort((a, b) => (a.id < b.id ? -1 : 1))) {
+    for (const it of sharedItems(type).filter((x) => !(type === 'event' && x.src)).sort((a, b) => (a.id < b.id ? -1 : 1))) {
       const k = keyFn(it);
       if (!k) continue;
       if (seen.has(k)) { sharedRemove(it.id); removed++; } else seen.add(k);
@@ -2340,9 +2350,15 @@ function setShopPhoto(id, dataUrl) {
   scheduleSync();
 }
 function pickShopPhoto(id) {
-  const input = el('input', { type: 'file', accept: 'image/*' });
+  // The picker must be part of the page: iPhones can silently drop a photo chosen
+  // through a detached file input.
+  const input = el('input', { type: 'file', accept: 'image/*', style: 'position:fixed;left:-9999px;width:1px;height:1px;opacity:0' });
+  document.body.append(input);
+  const cleanup = () => setTimeout(() => input.remove(), 1000);
+  input.addEventListener('cancel', cleanup);
   input.addEventListener('change', async () => {
     const file = input.files[0];
+    cleanup();
     if (!file) return;
     try {
       const dataUrl = await compressImage(file, 480, 0.65);
@@ -2867,15 +2883,15 @@ function mergeCalendar(occs, src, who) {
   // Your partner's connected calendar wins for events you both have; events that
   // arrived untagged (morning link / added by hand) are taken over by the calendar,
   // so they show as yours and stay in step with Google.
-  const others = new Set(all.filter((e) => e.src && e.src !== src).map(eventKey));
-  const untagged = new Map(all.filter((e) => !e.src).map((e) => [eventKey(e), e]));
+  // Each phone keeps its own copy of events you both have (so each stays in step
+  // with its own Google Calendar); the calendar shows them once as "Both of you".
+  // Untagged copies (from an old link, or typed in) that match are replaced.
+  let untagged = all.filter((e) => !e.src);
   const wanted = new Set();
   let changes = 0;
   for (const o of occs) {
-    const key = eventKey(o);
-    if (others.has(key)) continue;
-    const old = untagged.get(key);
-    if (old) { sharedRemove(old.id); untagged.delete(key); changes++; }
+    for (const old of untagged.filter((u) => sameEvent(u, o))) { sharedRemove(old.id); changes++; }
+    untagged = untagged.filter((u) => !sameEvent(u, o));
     const id = 'g' + fnv(src + '|' + o.uid) + o.date.replace(/-/g, '') + (o.time || '').replace(':', '');
     wanted.add(id);
     const prev = own.get(id);
@@ -3332,7 +3348,7 @@ function renderLost() {
 
 // ---------- app updates ----------
 // Must match CACHE in sw.js (a test checks this).
-const APP_VERSION = 'evergreen-v52';
+const APP_VERSION = 'evergreen-v53';
 let updateReady = false;
 async function checkForUpdate(manual = false) {
   try {
