@@ -1,4 +1,4 @@
-# My Life
+# Evergreen
 
 A private, installable phone app for life admin — car, documents, reminders and more — with everything encrypted on the device. The car section talks to a 2017 VW Tiguan through a Bluetooth OBD-II adapter. No build step, no dependencies, no account, no server; nothing you store ever leaves your phone.
 

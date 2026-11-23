@@ -61,8 +61,8 @@ export async function enableBiometric(passphrase, storage = globalThis.localStor
   const cred = await navigator.credentials.create({
     publicKey: {
       challenge: rand(32),
-      rp: { name: 'My Life', id: location.hostname },
-      user: { id: rand(16), name: 'my-life', displayName: 'My Life' },
+      rp: { name: 'Evergreen', id: location.hostname },
+      user: { id: rand(16), name: 'evergreen', displayName: 'Evergreen' },
       pubKeyCredParams: [{ type: 'public-key', alg: -7 }, { type: 'public-key', alg: -257 }],
       authenticatorSelection: { authenticatorAttachment: 'platform', userVerification: 'required', residentKey: 'preferred' },
       timeout: 60000,
