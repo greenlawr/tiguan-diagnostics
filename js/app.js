@@ -19,7 +19,7 @@ import { parseICS, expandEvents } from './ical.js';
 import { makeVerifier, checkVerifier } from './lost.js';
 import { ageText, nextBirthday, mask, nhsNumberValid } from './family.js';
 import { groupEvents, sameEvent } from './eventmatch.js';
-import { summariseCar } from './cardata.js';
+import { summariseCar, looksLikeUkReg, isFullModernReg } from './cardata.js';
 import { syncShared } from './sync.js';
 import { savePhoto, loadPhoto, deletePhoto, exportAllPhotos, importAllPhotos } from './photos.js';
 import { parseImport, importCount } from './import.js';
@@ -857,7 +857,22 @@ $('reg-input').addEventListener('input', (e) => {
   v.reg = cleanReg(e.target.value);
   saveVehicle(v);
   refreshRenewals();
+  autoLookupCar(false);
 });
+// Short / private plates are looked up when you leave the box.
+$('reg-input').addEventListener('change', () => autoLookupCar(true));
+// Look the car up by itself once a complete UK registration has been typed.
+let regTimer = null;
+function autoLookupCar(leftBox) {
+  clearTimeout(regTimer);
+  regTimer = setTimeout(() => {
+    const reg = cleanReg($('reg-input').value);
+    const v = loadVehicle();
+    if (!(leftBox ? looksLikeUkReg(reg) : isFullModernReg(reg))) return;
+    if (v.official && cleanReg(v.official.reg || '') === reg && Date.now() - (v.officialAt || 0) < 3600000) return; // just done
+    lookupCar(true);
+  }, leftBox ? 50 : 900);
+}
 for (const key of ['mot', 'tax', 'insurance', 'service']) {
   $(key + '-input').addEventListener('change', (e) => {
     const v = loadVehicle();
@@ -3440,7 +3455,7 @@ function renderLost() {
 
 // ---------- app updates ----------
 // Must match CACHE in sw.js (a test checks this).
-const APP_VERSION = 'evergreen-v54';
+const APP_VERSION = 'evergreen-v55';
 let updateReady = false;
 async function checkForUpdate(manual = false) {
   try {

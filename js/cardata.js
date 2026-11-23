@@ -57,3 +57,18 @@ export function summariseCar(dvla, mot) {
     sources: { dvla: dvla?.configured ? (dvla.data ? 'ok' : dvla.notFound ? 'not found' : dvla.error || 'error') : 'not set up', mot: mot?.configured ? (mot.data ? 'ok' : mot.notFound ? 'not found' : mot.error || 'error') : 'not set up' },
   };
 }
+
+/** A full-length modern UK plate — safe to look up while still typing. */
+export function isFullModernReg(value) {
+  const r = String(value || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  return /^[A-Z]{2}\d{2}[A-Z]{3}$/.test(r) || /^[A-Z]\d{1,3}[A-Z]{3}$/.test(r) || /^[A-Z]{3}\d{1,3}[A-Z]$/.test(r);
+}
+/** Any UK registration (incl. short dateless / private and Northern Ireland plates). */
+export function looksLikeUkReg(value) {
+  const r = String(value || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  return /^[A-Z]{2}\d{2}[A-Z]{3}$/.test(r) // current: AB17 CDE
+    || /^[A-Z]\d{1,3}[A-Z]{3}$/.test(r) // prefix: A123 BCD
+    || /^[A-Z]{3}\d{1,3}[A-Z]$/.test(r) // suffix: ABC 123D
+    || /^[A-Z]{1,3}\d{1,4}$/.test(r) // dateless / NI: ABC 1234
+    || /^\d{1,4}[A-Z]{1,3}$/.test(r); // dateless: 1234 AB
+}

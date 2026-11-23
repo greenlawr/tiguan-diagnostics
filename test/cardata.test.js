@@ -48,3 +48,12 @@ test('server: /vehicle needs your household key and reports when keys are not se
   assert.equal(r.body.reg, 'AB17CDE');
   assert.deepEqual([r.body.dvla.configured, r.body.mot.configured], [false, false]);
 });
+
+test('recognises complete UK registrations of every era', async () => {
+  const { looksLikeUkReg, isFullModernReg } = await import('../js/cardata.js');
+  for (const r of ['AB17 CDE', 'ab17cde', 'A123 BCD', 'ABC 123D', 'ABZ 1234', '1234 AB', 'K1', 'AB1']) assert.ok(looksLikeUkReg(r), r);
+  for (const r of ['', 'HELLO WORLD', 'AB17 CD']) assert.ok(!looksLikeUkReg(r), r);
+  // while typing, only full modern plates trigger (so 'AB1' on the way to 'AB17 CDE' doesn't)
+  for (const r of ['AB17 CDE', 'A123 BCD', 'ABC 123D']) assert.ok(isFullModernReg(r), r);
+  for (const r of ['AB1', 'AB17', 'AB17 CD', 'K1']) assert.ok(!isFullModernReg(r), r);
+});

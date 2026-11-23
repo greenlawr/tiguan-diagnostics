@@ -101,9 +101,9 @@
         <label class="field">Registration
           <input id="reg-input" type="text" inputmode="text" autocapitalize="characters" autocomplete="off" placeholder="e.g. AB17 CDE">
         </label>
-        <button id="btn-car-lookup" class="primary">Get my car's details</button>
+        <button id="btn-car-lookup">Look up again</button>
         <p id="car-lookup-status" class="status" role="status"></p>
-        <p class="muted small" style="margin:0">Your registration is only used to look up the official DVLA and MOT records (through your own sync server). Everything else on this tab stays on this phone.</p>
+        <p class="muted small" style="margin:0">Type your registration and Evergreen fills in the official DVLA details and MOT history by itself. Your registration is only used for that lookup; everything else on this tab stays on this phone.</p>
       </div>
       <div id="official-out"></div>
 
@@ -121,7 +121,7 @@
           <a id="lnk-tax" class="btn-a" target="_blank" rel="noopener">Check tax &amp; MOT status</a>
         </div>
         <a id="lnk-cal" class="btn-a" target="_blank" rel="noopener" hidden>Add MOT reminder to calendar</a>
-        <p class="muted small">MOT and tax dates fill in automatically from the official records when you tap “Get my car's details” (and refresh weekly). You can still type them yourself.</p>
+        <p class="muted small">MOT and tax dates fill in automatically from the official records (and refresh weekly). You can still type them yourself.</p>
       </div>
 
       <h3>Where did I park?</h3>
@@ -673,7 +673,7 @@ shopping: milk, bread, eggs</pre>
     <li><strong>DVSA MOT History</strong> (every MOT result): register at <strong>documentation.history.mot.api.gov.uk</strong>. They email a client ID, client secret, token URL and API key.</li>
     <li>In Cloudflare (your personal account): <strong>evergreen-sync → Settings → Variables and Secrets → Add</strong>, choose type <strong>Secret</strong> for each:
       <code>DVLA_API_KEY</code>, <code>MOT_CLIENT_ID</code>, <code>MOT_CLIENT_SECRET</code>, <code>MOT_API_KEY</code>, <code>MOT_TOKEN_URL</code>.</li>
-    <li>On the Car tab, type your registration and tap <strong>Get my car's details</strong>.</li>
+    <li>On the Car tab, type your registration — the details fill in by themselves.</li>
   </ol>
   <p class="muted small">The keys stay on your server, never on the phones. Either key works on its own. DVSA cancels an MOT key that isn't used for 90 days — Evergreen refreshes weekly, which keeps it active.</p>
 </details>
