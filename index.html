@@ -421,7 +421,7 @@
 
       <h3 id="sec-shopping">Shopping &amp; to-do list</h3>
       <div class="card" id="shared-card">
-        <p class="muted small" id="shared-hint">Add anything — shopping, jobs, reminders. Tick items off when they're done. Connect with your partner below to share this list between your phones.</p>
+        <p class="muted small" id="shared-hint">Add anything — shopping, jobs, reminders. Tick items off when they're done. Pair with your partner in Sharing &amp; sync to share it between your phones. Tap 📷 to add a photo to any item.</p>
         <div class="row">
           <input id="shared-input" type="text" placeholder="Add an item…" style="flex:1;min-width:0">
           <button id="btn-shared-add" class="primary" style="width:auto">Add</button>
@@ -640,6 +640,14 @@ shopping: milk, bread, eggs</pre>
   </nav>
 
   <div id="toast" class="toast" hidden></div>
+  <div id="photo-viewer" class="photo-viewer" hidden role="dialog" aria-modal="true" aria-label="Photo">
+    <div id="photo-viewer-title" class="photo-viewer-title"></div>
+    <img id="photo-viewer-img" alt="">
+    <div class="row">
+      <button id="photo-viewer-remove">Remove photo</button>
+      <button id="photo-viewer-close" class="primary">Close</button>
+    </div>
+  </div>
 
   <script type="module" src="js/app.js"></script>
 </body>

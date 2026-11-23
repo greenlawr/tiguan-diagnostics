@@ -1990,16 +1990,74 @@ function renderShared() {
     box.addEventListener('change', () => { const all = store.load(SHARED_KEY, {}); all[it.id] = { ...all[it.id], done: box.checked, updatedAt: now() }; store.save(SHARED_KEY, all); renderShared(); scheduleSync(); });
     const label = el('span', { class: 'name', text: it.text });
     if (it.done) label.style.textDecoration = 'line-through';
-    const del = el('button', { class: 'del', text: '✕' });
-    del.addEventListener('click', () => { const all = store.load(SHARED_KEY, {}); all[it.id] = { ...all[it.id], deleted: true, updatedAt: now() }; store.save(SHARED_KEY, all); renderShared(); scheduleSync(); });
-    list.append(el('li', {}, el('label', { class: 'check', style: 'margin:0;flex:1' }, box, label), del));
+    const del = el('button', { class: 'del', text: '✕', 'aria-label': 'Remove ' + it.text });
+    // Deleting drops the photo too, so removed items don't keep using shared space.
+    del.addEventListener('click', () => { const all = store.load(SHARED_KEY, {}); const { photo, ...rest } = all[it.id]; all[it.id] = { ...rest, deleted: true, updatedAt: now() }; store.save(SHARED_KEY, all); renderShared(); scheduleSync(); });
+    const row = el('li', { class: 'shop-row' }, el('label', { class: 'check', style: 'margin:0;flex:1;min-width:0' }, box, label));
+    if (it.photo) {
+      const thumb = el('img', { class: 'shop-thumb', src: it.photo, alt: 'Photo of ' + it.text });
+      thumb.addEventListener('click', () => openPhotoViewer(it.photo, it.text, () => setShopPhoto(it.id, null)));
+      row.append(thumb);
+    }
+    const cam = el('button', { class: 'shop-cam', text: '📷', 'aria-label': (it.photo ? 'Change photo for ' : 'Add a photo to ') + it.text });
+    cam.addEventListener('click', () => pickShopPhoto(it.id));
+    row.append(cam, del);
+    list.append(row);
   }
   if (!visible.length) list.append(el('li', { class: 'muted small', text: 'Nothing on the list.' }));
   $('btn-shared-clear').hidden = !visible.some((i) => i.done);
 }
+// ----- photos on shopping items -----
+// Small thumbnails, stored inside the (encrypted) shared item so they sync to
+// your partner. Kept under a budget so the shared space stays well within the
+// sync server's limit.
+const SHARED_PHOTO_BUDGET = 1_300_000; // characters of local JSON (~1.3 MB)
+function setShopPhoto(id, dataUrl) {
+  const all = store.load(SHARED_KEY, {});
+  if (!all[id]) return;
+  const { photo, ...rest } = all[id];
+  all[id] = dataUrl ? { ...rest, photo: dataUrl, updatedAt: now() } : { ...rest, updatedAt: now() };
+  store.save(SHARED_KEY, all);
+  renderShared();
+  scheduleSync();
+}
+function pickShopPhoto(id) {
+  const input = el('input', { type: 'file', accept: 'image/*' });
+  input.addEventListener('change', async () => {
+    const file = input.files[0];
+    if (!file) return;
+    try {
+      const dataUrl = await compressImage(file, 480, 0.65);
+      const all = store.load(SHARED_KEY, {});
+      const before = JSON.stringify(all).length - (all[id]?.photo?.length || 0);
+      if (before + dataUrl.length > SHARED_PHOTO_BUDGET) {
+        toast('Photo space for the shared list is full — remove a few photos first.');
+        return;
+      }
+      setShopPhoto(id, dataUrl);
+      haptic();
+      toast('Photo added ✓');
+    } catch (e) {
+      toast(e.message || 'Could not add that photo.');
+    }
+  });
+  input.click();
+}
+function openPhotoViewer(src, title, onRemove) {
+  const v = $('photo-viewer');
+  $('photo-viewer-img').src = src;
+  $('photo-viewer-title').textContent = title || '';
+  v.hidden = false;
+  const close = () => { v.hidden = true; $('photo-viewer-img').src = ''; };
+  $('photo-viewer-close').onclick = close;
+  v.onclick = (e) => { if (e.target === v) close(); };
+  $('photo-viewer-remove').hidden = !onRemove;
+  $('photo-viewer-remove').onclick = () => { close(); onRemove(); toast('Photo removed'); };
+}
+
 $('btn-shared-clear').addEventListener('click', () => {
   const all = store.load(SHARED_KEY, {});
-  for (const it of Object.values(all)) if (it.done && !it.deleted) { all[it.id] = { ...it, deleted: true, updatedAt: now() }; }
+  for (const it of Object.values(all)) if (it.done && !it.deleted) { const { photo, ...rest } = it; all[it.id] = { ...rest, deleted: true, updatedAt: now() }; }
   store.save(SHARED_KEY, all);
   renderShared();
   scheduleSync();
