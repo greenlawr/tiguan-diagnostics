@@ -415,3 +415,9 @@ button:active:not(:disabled), .btn-a:active { transform: translateY(1px); }
 .cal-day { font-weight: 700; font-size: 14px; margin: 16px 0 4px; }
 .cal-day:first-child { margin-top: 6px; }
 .cal-day.today { color: var(--accent); }
+
+/* Today card on Home */
+.today-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.today-head h2 { margin: 0; }
+.today-card .list { margin-top: 6px; }
+.today-toggle { margin-top: 10px; text-align: left; padding: 8px 0 0; min-height: 36px; }

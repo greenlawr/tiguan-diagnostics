@@ -14,7 +14,27 @@ const json = (obj, status = 200) => new Response(JSON.stringify(obj), { status, 
 export default {
   async fetch(request, env) {
     if (request.method === 'OPTIONS') return new Response(null, { headers: CORS });
-    const id = new URL(request.url).pathname.split('/').filter(Boolean).pop() || '';
+    const url = new URL(request.url);
+
+    // Calendar pass-through: phones can't fetch a Google/Outlook/iCloud calendar
+    // feed directly (browsers block it), so this fetches it on their behalf.
+    // Only for your own household, only calendar links, and nothing is stored.
+    if (request.method === 'GET' && url.pathname.replace(/\/+$/, '').endsWith('/cal')) {
+      const hid = url.searchParams.get('h') || '';
+      if (!/^[a-f0-9]{16,64}$/.test(hid) || !(await env.HOUSEHOLD.get(hid))) return json({ error: 'unknown household — sync once first' }, 403);
+      let target;
+      try { target = new URL((url.searchParams.get('url') || '').replace(/^webcal:/i, 'https:')); } catch { return json({ error: 'bad calendar link' }, 400); }
+      const allowed = target.protocol === 'https:' && (
+        (target.hostname === 'calendar.google.com' && target.pathname.startsWith('/calendar/ical/')) ||
+        ((target.hostname === 'outlook.live.com' || target.hostname === 'outlook.office365.com') && target.pathname.includes('/calendar/')) ||
+        /^p\d+-caldav\.icloud\.com$/.test(target.hostname));
+      if (!allowed) return json({ error: 'only calendar links are allowed' }, 400);
+      const res = await fetch(target.toString(), { cf: { cacheTtl: 300 } });
+      if (!res.ok) return json({ error: `the calendar returned ${res.status} — check the link` }, 502);
+      return new Response(await res.text(), { headers: { 'Content-Type': 'text/calendar; charset=utf-8', 'Cache-Control': 'no-store', ...CORS } });
+    }
+
+    const id = url.pathname.split('/').filter(Boolean).pop() || '';
     if (!/^[a-f0-9]{16,64}$/.test(id)) return json({ error: 'bad id' }, 400);
 
     if (request.method === 'GET') {

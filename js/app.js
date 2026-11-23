@@ -14,7 +14,8 @@ import { fuelStats, renewals, countdown, upcomingReminders, parkMapsUrl, timeAgo
 import { Vault } from './vault.js';
 import { CARRIER_NAMES, trackingUrl, parcelStatus, parseShared } from './deliveries.js';
 import { biometricAvailable, biometricConfigured, enableBiometric, unlockBiometric, disableBiometric } from './biometric.js';
-import { generateHouseholdCode, normalizeCode } from './household.js';
+import { generateHouseholdCode, normalizeCode, householdId } from './household.js';
+import { parseICS, expandEvents } from './ical.js';
 import { syncShared } from './sync.js';
 import { savePhoto, loadPhoto, deletePhoto, exportAllPhotos, importAllPhotos } from './photos.js';
 import { parseImport, importCount } from './import.js';
@@ -1260,7 +1261,7 @@ function renderCalendar() {
   for (const e of rows) {
     if (e.date !== lastDay) { const label = dayLabel(e.date); ul = el('ul', { class: 'list' }); out.append(el('div', { class: 'cal-day' + (label === 'Today' ? ' today' : ''), text: label }), ul); lastDay = e.date; }
     const when = /^\d/.test((e.time || '').trim()) ? e.time.trim() : 'All day';
-    ul.append(deletableRow(`${when} · ${e.title || 'Event'}`, e.where || '', () => { sharedRemove(e.id); renderCalendar(); renderHome(); scheduleSync(); }));
+    ul.append(deletableRow(`${when} · ${e.title || 'Event'}`, [e.where, e.who].filter(Boolean).join(' · '), () => { sharedRemove(e.id); renderCalendar(); renderHome(); scheduleSync(); }));
   }
 }
 $('cal-date').value = todayISO();
@@ -1273,19 +1274,50 @@ $('btn-cal-add').addEventListener('click', () => {
   toast('Event added ✓');
 });
 
-function renderAgenda(out) {
-  pruneEvents();
-  const rows = upcomingEvents(7);
-  if (!rows.length) return;
-  const card = el('div', { class: 'card' }, el('h2', { text: 'This week' }));
-  let lastDay = null;
+function eventRows(rows) {
+  const ul = el('ul', { class: 'list' });
   for (const e of rows) {
-    if (e.date !== lastDay) { card.append(el('div', { class: 'agenda-day', text: dayLabel(e.date) })); lastDay = e.date; }
     const when = /^\d/.test((e.time || '').trim()) ? e.time.trim() : 'All day';
-    card.append(el('div', { class: 'line' },
-      el('div', {}, el('div', { class: 'name', text: e.title || 'Event' }), e.where ? el('div', { class: 'sub', text: e.where }) : el('div', { class: 'sub', text: '' })),
-      el('span', { class: 'tag dim', text: when })
-    ));
+    const sub = [e.where, e.who].filter(Boolean).join(' · ');
+    ul.append(el('li', {}, el('div', { class: 'line' },
+      el('div', {}, el('div', { class: 'name', text: e.title || 'Event' }), sub ? el('div', { class: 'sub', text: sub }) : null),
+      el('span', { class: 'tag dim', text: when }))));
+  }
+  return ul;
+}
+const WEEK_OPEN_KEY = 'evergreen-week-open';
+function renderToday(out) {
+  pruneEvents();
+  const today = todayISO();
+  const todays = upcomingEvents(0);
+  const week = upcomingEvents(6).filter((e) => e.date !== today);
+  const card = el('div', { class: 'card today-card' },
+    el('div', { class: 'today-head' }, el('h2', { text: 'Today' }),
+      el('span', { class: 'muted small', text: new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' }) })));
+  if (todays.length) card.append(eventRows(todays));
+  else card.append(el('p', { class: 'muted', style: 'margin:4px 0 0', text: 'Nothing in the calendar today.' }));
+  if (week.length) {
+    let open = false;
+    try { open = localStorage.getItem(WEEK_OPEN_KEY) === '1'; } catch { /* ignore */ }
+    const more = el('div', {});
+    let lastDay = null;
+    for (const e of week) {
+      if (e.date !== lastDay) { more.append(el('div', { class: 'cal-day', text: dayLabel(e.date) }), eventRows(week.filter((x) => x.date === e.date))); lastDay = e.date; }
+    }
+    more.hidden = !open;
+    const btn = el('button', { class: 'link today-toggle' });
+    const label = () => { btn.textContent = more.hidden ? `Show the rest of the week (${week.length}) ▾` : 'Hide the rest of the week ▴'; };
+    label();
+    btn.addEventListener('click', () => {
+      more.hidden = !more.hidden; label(); haptic();
+      try { localStorage.setItem(WEEK_OPEN_KEY, more.hidden ? '0' : '1'); } catch { /* ignore */ }
+    });
+    card.append(btn, more);
+  }
+  if (!settings().icsUrl) {
+    const connect = el('button', { class: 'link today-toggle', text: 'Connect your Google Calendar →' });
+    connect.addEventListener('click', () => goLife('calendar'));
+    card.append(connect);
   }
   out.append(card);
 }
@@ -1316,11 +1348,12 @@ function renderDashboard() {
     el('div', { class: 'headline', text: greeting() }),
     el('p', { text: summary })
   );
-  out.replaceChildren(card);
+  out.replaceChildren();
+  renderToday(out);
+  out.append(card);
 
   if (isAppEmpty()) out.append(welcomeCard());
 
-  renderAgenda(out);
 
   if (items.length) {
     const list = el('ul', { class: 'list' });
@@ -1924,7 +1957,7 @@ $('btn-sync').addEventListener('click', () => syncNow());
 // signal back, and every minute while it's open. Only ever while unlocked.
 const AUTO_SYNC_MS = 60 * 1000;
 function autoSync() {
-  if (!vault.locked && !document.hidden && paired()) syncNow();
+  if (!vault.locked && !document.hidden && paired()) syncNow().then(() => pullCalendar());
 }
 document.addEventListener('visibilitychange', autoSync);
 window.addEventListener('online', autoSync);
@@ -2537,9 +2570,117 @@ function handleLaunchParams() {
   }
 }
 
+// ---------- connected Google Calendar ----------
+// Each phone fetches its owner's calendar feed (via the sync server, which
+// browsers require), expands the next 60 days, and writes the events into the
+// shared space tagged with this phone's source id, so your partner sees them.
+const CAL_DAYS = 60;
+const CAL_MIN_GAP = 10 * 60 * 1000;
+let calPulling = null;
+let calLastPull = 0;
+function fnv(str) { let h = 0x811c9dc5; for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 0x01000193); } return (h >>> 0).toString(36); }
+function mergeCalendar(occs, src, who) {
+  const all = sharedItems('event');
+  const own = new Map(all.filter((e) => e.src === src).map((e) => [e.id, e]));
+  const others = new Set(all.filter((e) => e.src !== src).map(eventKey));
+  const wanted = new Set();
+  let changes = 0;
+  for (const o of occs) {
+    if (others.has(eventKey(o))) continue; // already there from your partner or added by hand
+    const id = 'g' + fnv(src + '|' + o.uid) + o.date.replace(/-/g, '') + (o.time || '').replace(':', '');
+    wanted.add(id);
+    const prev = own.get(id);
+    if (prev && prev.title === o.title && prev.where === o.where && prev.who === who) continue;
+    sharedSet({ id, type: 'event', src, who, title: o.title, date: o.date, time: o.time, where: o.where, updatedAt: now(), deleted: false });
+    changes++;
+  }
+  for (const e of own.values()) if (!wanted.has(e.id)) { sharedRemove(e.id); changes++; }
+  return changes;
+}
+function pullCalendar(manual = false) {
+  const s = settings();
+  if (!s.icsUrl || !paired()) return Promise.resolve(false);
+  if (!manual && Date.now() - calLastPull < CAL_MIN_GAP) return Promise.resolve(false);
+  if (calPulling) return calPulling;
+  calPulling = (async () => {
+    calLastPull = Date.now();
+    try {
+      const hid = await householdId(s.householdCode);
+      const res = await fetch(`${s.syncUrl.replace(/\/+$/, '')}/cal?h=${hid}&url=${encodeURIComponent(s.icsUrl)}`, { cache: 'no-store' });
+      if (!res.ok) { let msg = ''; try { msg = (await res.json()).error; } catch { /* not json */ } throw new Error(msg || `the server returned ${res.status}`); }
+      const text = await res.text();
+      if (!/BEGIN:VCALENDAR/.test(text)) throw new Error("that link didn't return a calendar");
+      const hide = (settings().calHide || '').split(',').map((w) => w.trim().toLowerCase()).filter(Boolean);
+      const occs = expandEvents(parseICS(text), todayISO(), CAL_DAYS).filter((o) => !hide.some((w) => `${o.title} ${o.where}`.toLowerCase().includes(w)));
+      const changes = mergeCalendar(occs, s.calSrc, myName() === 'Me' ? '' : myName());
+      saveSettings({ calLast: Date.now(), calCount: occs.length, calError: '' });
+      if (changes) { scheduleSync(); renderCalendar(); renderHome(); }
+      refreshCalConnectUI();
+      return true;
+    } catch (e) {
+      saveSettings({ calError: e.message });
+      refreshCalConnectUI();
+      log('info', 'Calendar update failed: ' + e.message);
+      if (manual) throw e;
+      return false;
+    } finally {
+      calPulling = null;
+    }
+  })();
+  return calPulling;
+}
+function refreshCalConnectUI() {
+  const s = settings();
+  const on = Boolean(s.icsUrl);
+  $('cal-conn-off').hidden = on;
+  $('cal-conn-on').hidden = !on;
+  if (!on) return;
+  if ($('cal-hide') !== document.activeElement) $('cal-hide').value = s.calHide || '';
+  $('cal-conn-status').textContent = s.calError
+    ? `— couldn't update: ${s.calError}`
+    : s.calLast ? `· ${s.calCount} event${s.calCount === 1 ? '' : 's'} in the next ${CAL_DAYS} days · updated ${new Date(s.calLast).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : '';
+}
+$('btn-cal-connect').addEventListener('click', async () => {
+  const link = $('cal-ics').value.trim().replace(/^webcal:/i, 'https:');
+  if (!/^https:\/\/\S+/.test(link)) return setStatus('cal-conn-msg', "Paste your calendar's secret address first.", true);
+  if (/calendar\.google\.com/.test(link) && !/\/ical\//.test(link)) return setStatus('cal-conn-msg', "That's not the iCal address — copy 'Secret address in iCal format' (it ends in .ics).", true);
+  if (!paired()) return setStatus('cal-conn-msg', 'Set up Sharing & sync first — the calendar uses the same server.', true);
+  const btn = $('btn-cal-connect');
+  btn.disabled = true;
+  setStatus('cal-conn-msg', 'Connecting…');
+  saveSettings({ icsUrl: link, calSrc: settings().calSrc || 'c' + fnv(String(Math.random()) + Date.now()), calError: '' });
+  try {
+    await syncNow(); // makes sure the household exists on the server
+    await pullCalendar(true);
+    $('cal-ics').value = '';
+    setStatus('cal-conn-msg', `Connected — ${settings().calCount} events added to the family calendar ✓`);
+    haptic();
+  } catch (e) {
+    saveSettings({ icsUrl: '' });
+    setStatus('cal-conn-msg', `Couldn't connect: ${e.message}`, true);
+  } finally {
+    btn.disabled = false;
+    refreshCalConnectUI();
+  }
+});
+$('btn-cal-refresh').addEventListener('click', async () => {
+  setStatus('cal-conn-msg', 'Updating…');
+  try { await pullCalendar(true); setStatus('cal-conn-msg', 'Up to date ✓'); } catch (e) { setStatus('cal-conn-msg', `Couldn't update: ${e.message}`, true); }
+});
+$('btn-cal-disconnect').addEventListener('click', () => {
+  if (!confirm("Disconnect your calendar? Your events will be removed from the family calendar on both phones.")) return;
+  const src = settings().calSrc;
+  for (const e of sharedItems('event')) if (e.src === src) sharedRemove(e.id);
+  saveSettings({ icsUrl: '', calLast: 0, calCount: 0, calError: '' });
+  scheduleSync(); renderCalendar(); renderHome(); refreshCalConnectUI();
+  setStatus('cal-conn-msg', 'Disconnected.');
+});
+const persistCalHide = debounce((v) => { saveSettings({ calHide: v }); pullCalendar(true).catch(() => {}); }, 900);
+$('cal-hide').addEventListener('input', (e) => persistCalHide(e.target.value));
+
 // ---------- app updates ----------
 // Must match CACHE in sw.js (a test checks this).
-const APP_VERSION = 'evergreen-v40';
+const APP_VERSION = 'evergreen-v41';
 let updateReady = false;
 async function checkForUpdate(manual = false) {
   try {
@@ -2616,6 +2757,8 @@ async function initAll() {
   }
   handleLaunchParams();
   checkForUpdate();
+  refreshCalConnectUI();
+  syncNow().then(() => pullCalendar());
 }
 
 try {

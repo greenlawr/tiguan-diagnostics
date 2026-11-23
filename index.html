@@ -183,8 +183,34 @@
     <!-- Life admin: documents & renewals vault -->
     <section id="tab-life" class="tab">
       <h3 id="sec-calendar">Family calendar</h3>
+      <div class="card" id="cal-connect">
+        <h2>Your Google Calendar</h2>
+        <div id="cal-conn-off">
+          <p class="muted small">Each of you connects your own calendar on your own phone, and both of you see everything here and on Home. Your link stays encrypted on this phone.</p>
+          <label class="field">Your calendar's secret address<input id="cal-ics" type="url" autocapitalize="off" autocomplete="off" placeholder="https://calendar.google.com/calendar/ical/…/basic.ics"></label>
+          <button id="btn-cal-connect" class="primary">Connect my calendar</button>
+          <details class="inner">
+            <summary>Where do I find this?</summary>
+            <ol class="small">
+              <li>Open <strong>calendar.google.com</strong> on a computer — or in your phone's browser, switched to <em>Desktop site</em> (the Google Calendar app doesn't show it).</li>
+              <li>Tap ⚙ <strong>Settings</strong>, then under <em>Settings for my calendars</em> on the left, tap <strong>your name</strong>.</li>
+              <li>Scroll to <strong>Integrate calendar</strong> and copy <strong>Secret address in iCal format</strong>.</li>
+              <li>Paste it above. Keep it private — anyone with it can see your calendar.</li>
+            </ol>
+          </details>
+        </div>
+        <div id="cal-conn-on" hidden>
+          <p style="margin:0 0 8px"><strong>Connected ✓</strong> <span id="cal-conn-status" class="muted small"></span></p>
+          <label class="field">Don't share events containing (comma-separated)<input id="cal-hide" type="text" autocomplete="off" placeholder="e.g. Foyer, Jack Francis, dentist"></label>
+          <div class="row">
+            <button id="btn-cal-refresh">Refresh now</button>
+            <button id="btn-cal-disconnect">Disconnect</button>
+          </div>
+        </div>
+        <p id="cal-conn-msg" class="status" role="status"></p>
+      </div>
       <div class="card">
-        <p class="muted small">Everything coming up for the family, shared between your phones. Events from Google Calendar arrive with the morning link; you can also add one here.</p>
+        <p class="muted small">Everything coming up for the family — both of your Google Calendars, plus anything you add here.</p>
         <details class="inner-form" id="cal-form">
           <summary>Add an event</summary>
           <label class="field">What<input id="cal-title" type="text" placeholder="e.g. Dentist — Maddy"></label>
@@ -580,8 +606,9 @@ shopping: milk, bread, eggs</pre>
 
 <details class="card">
   <summary>Family calendar &amp; the morning check</summary>
-  <p>Each morning Claude checks your Gmail and Google Calendar and sends you one link. Tap it and new parcels and the next two weeks of events drop straight in — and onto your partner's phone too. Nothing is ever added twice.</p>
-  <p>You can also add an event yourself under <strong>Life → Family calendar</strong>. Past events tidy themselves away.</p>
+  <p><strong>Calendar:</strong> each of you connects your own Google Calendar under <strong>Life → Family calendar</strong> (it shows you where to find your calendar's secret address). Your phone then keeps your events up to date by itself, and your partner sees them too. Home shows what's on <strong>today</strong>, with the rest of the week one tap away.</p>
+  <p>Add words like "Foyer" to <em>Don't share events containing</em> to keep work events off the family calendar. You can also add a one-off event by hand.</p>
+  <p><strong>Morning check:</strong> each morning Claude checks your Gmail for parcels and sends you one link — tap it and they drop in on both phones. Nothing is ever added twice.</p>
 </details>
 
 <details class="card">
