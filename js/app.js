@@ -1192,16 +1192,56 @@ function renderUtilities() {
       } catch { /* share closed */ }
     });
     actions.append(rec);
+    const saveRec = el('button', { text: u.recommendation ? 'Update options' : 'Save options' });
+    saveRec.addEventListener('click', () => openRecModal(u.id));
+    actions.append(saveRec);
     if (COMPARE[u.type]) actions.append(el('a', { class: 'btn-a', href: COMPARE[u.type], target: '_blank', rel: 'noopener', text: 'Compare site' }));
     if (u.renewal) actions.append(el('a', { class: 'btn-a', href: calendarEvent(`${u.type} renewal${u.provider ? ' – ' + u.provider : ''}`, u.renewal, { guests: partnerEmail() }), target: '_blank', rel: 'noopener', text: 'Remind me' }));
     const del = el('button', { class: 'del', text: '✕' });
     del.addEventListener('click', () => { store.save(UTIL_KEY, items.filter((x) => x.id !== u.id)); renderUtilities(); renderDashboard(); });
     actions.append(del);
     row.append(actions);
+    if (u.recommendation) {
+      const r = u.recommendation;
+      const saving = u.cost && r.bestMonthly && u.cost - r.bestMonthly > 0 ? u.cost - r.bestMonthly : null;
+      const box = el('div', { class: 'state-note', style: 'margin-top:10px' });
+      if (saving) box.append(el('div', {}, el('span', { class: 'tag ok', text: `Could save ~${money(saving)}/mo` }), el('span', { text: `  (~${money(saving * 12)}/yr)` })));
+      box.append(el('details', { class: 'inner' }, el('summary', { text: `Saved options — ${fmtDate(r.savedAt.slice(0, 10))}` }), el('pre', { class: 'rec-text', text: r.text })));
+      row.append(box);
+    }
     list.append(row);
   }
   if (!items.length) list.append(el('li', { class: 'muted small', text: 'No plans added.' }));
 }
+// Estimate the cheapest monthly figure mentioned in a recommendation.
+function parseBestMonthly(text) {
+  const matches = [...(text || '').matchAll(/£\s?(\d+(?:\.\d+)?)\s*(?:\/|per)?\s*(?:mo|month|pm|p\/m|p\.m)/gi)];
+  const values = matches.map((m) => parseFloat(m[1])).filter((n) => n > 0);
+  return values.length ? Math.min(...values) : null;
+}
+let recUtilId = null;
+function openRecModal(id) {
+  recUtilId = id;
+  const u = store.load(UTIL_KEY, []).find((x) => x.id === id);
+  $('rec-text').value = u && u.recommendation ? u.recommendation.text : '';
+  $('rec-modal').hidden = false;
+  $('rec-text').focus();
+}
+$('rec-cancel').addEventListener('click', () => { $('rec-modal').hidden = true; recUtilId = null; });
+$('rec-save').addEventListener('click', () => {
+  const text = $('rec-text').value.trim();
+  const all = store.load(UTIL_KEY, []);
+  const u = all.find((x) => x.id === recUtilId);
+  if (u) {
+    u.recommendation = text ? { text, savedAt: new Date().toISOString(), bestMonthly: parseBestMonthly(text) } : null;
+    store.save(UTIL_KEY, all);
+  }
+  $('rec-modal').hidden = true;
+  recUtilId = null;
+  renderUtilities();
+  renderDashboard();
+});
+
 function utilityBrief(u) {
   return [
     `I'd like to compare my ${u.type.toLowerCase()} deal and find something cheaper (UK).`,
