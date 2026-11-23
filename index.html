@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0f1720">
+  <title>Tiguan Diagnostics</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="top">
+    <h1>Tiguan Diagnostics</h1>
+    <span id="conn" class="pill off">Not connected</span>
+  </header>
+
+  <main>
+    <!-- Check -->
+    <section id="tab-check" class="tab active">
+      <div id="unsupported" class="card note-card" hidden>
+        <strong>This browser cannot use Bluetooth.</strong>
+        Open this page in Chrome on an Android phone to connect to your car. You can still try the demo car below.
+      </div>
+
+      <div class="card" id="connect-card">
+        <h2>Connect to your car</h2>
+        <ol class="steps">
+          <li>Plug the adapter into the socket under the dashboard, just above the pedals.</li>
+          <li>Switch the ignition on. The engine can be off or running.</li>
+          <li>Tap the button below and choose your adapter from the list.</li>
+        </ol>
+        <button id="btn-reconnect" class="primary big" hidden>Reconnect to my adapter</button>
+        <button id="btn-connect" class="primary big">Connect to my car</button>
+        <button id="btn-demo" class="link">No adapter yet? Try a demo car</button>
+        <p id="connect-status" class="status" role="status"></p>
+      </div>
+
+      <div id="check-home" hidden>
+        <div class="card center">
+          <button id="btn-check" class="primary big">Check my car</button>
+          <p class="muted small">Takes about a minute. Nothing on the car is changed.</p>
+          <div id="progress" class="progress" hidden><div id="progress-bar"></div></div>
+          <p id="check-status" class="status" role="status"></p>
+        </div>
+      </div>
+
+      <div id="report"></div>
+
+      <div id="history" class="card" hidden>
+        <h2>Previous checks</h2>
+        <ul id="history-list" class="list"></ul>
+      </div>
+
+      <div class="card" id="vehicle-card">
+        <h2>My car &amp; MOT</h2>
+        <p class="muted small">Saved on this phone only. The app can't read MOT data itself (that needs a government key), so it keeps a reminder and links you to the free official checks.</p>
+        <label class="field">Registration
+          <input id="reg-input" type="text" inputmode="text" autocapitalize="characters" autocomplete="off" placeholder="e.g. AB17 CDE">
+        </label>
+        <label class="field">MOT due date
+          <input id="mot-input" type="date">
+        </label>
+        <div id="mot-countdown" class="status"></div>
+        <div class="row">
+          <a id="lnk-mot" class="btn-a" target="_blank" rel="noopener">Check MOT history (gov.uk)</a>
+          <a id="lnk-tax" class="btn-a" target="_blank" rel="noopener">Check tax &amp; MOT status</a>
+        </div>
+        <a id="lnk-cal" class="btn-a" target="_blank" rel="noopener" hidden>Add MOT reminder to calendar</a>
+      </div>
+
+      <button id="btn-disconnect" class="link" hidden>Disconnect from car</button>
+    </section>
+
+    <!-- Trips -->
+    <section id="tab-trips" class="tab">
+      <div class="card">
+        <h2>Trip &amp; fuel economy</h2>
+        <p class="muted">Start this before you drive and leave the phone connected. It tracks your distance, speed and real-world fuel economy for the journey.</p>
+        <button id="btn-trip" class="primary" data-needs-conn>Start recording</button>
+        <p id="trip-status" class="status" role="status"></p>
+      </div>
+      <div id="trip-live" hidden>
+        <div class="grid" id="trip-stats"></div>
+        <div class="card">
+          <h3 style="margin-top:0">Speed (mph)</h3>
+          <div id="chart-speed" class="chart"></div>
+          <h3>Fuel economy (mpg)</h3>
+          <div id="chart-mpg" class="chart"></div>
+        </div>
+      </div>
+      <div id="trips-history" class="card" hidden>
+        <h2>Past trips</h2>
+        <ul id="trips-list" class="list"></ul>
+      </div>
+    </section>
+
+    <!-- Live -->
+    <section id="tab-live" class="tab">
+      <div class="card">
+        <h2>Live readings</h2>
+        <p class="muted">Watch what the car's sensors are reporting right now. Each one says what it means and whether it looks normal.</p>
+        <button id="btn-live" class="primary" data-needs-conn>Start</button>
+        <p id="live-status" class="status" role="status"></p>
+      </div>
+      <div id="live-out"></div>
+    </section>
+
+    <!-- Help -->
+    <section id="tab-help" class="tab">
+      <details class="card" open>
+        <summary>Getting started</summary>
+        <p>You need a small Bluetooth adapter that plugs into the car's diagnostic socket. It must say <strong>Bluetooth LE</strong>, <strong>BLE</strong> or <strong>Bluetooth 4.0</strong> on the listing.</p>
+        <ul>
+          <li><strong>OBDLink CX</strong>: the most reliable choice.</li>
+          <li><strong>Vgate iCar Pro BLE 4.0</strong>: a good cheaper option.</li>
+        </ul>
+        <p>The socket is under the dashboard on the driver's side, above the pedals. The adapter only fits one way round. You can leave it plugged in for a check, but unplug it if the car will be parked for days.</p>
+      </details>
+
+      <details class="card">
+        <summary>Text size</summary>
+        <p class="muted">Make everything bigger if it's hard to read.</p>
+        <div class="row" id="text-size" role="group" aria-label="Text size">
+          <button data-size="normal">Normal</button>
+          <button data-size="large">Large</button>
+          <button data-size="xl">Larger</button>
+        </div>
+      </details>
+
+      <details class="card">
+        <summary>What the colours mean</summary>
+        <ul class="legend">
+          <li><span class="tag ok">All good</span> Nothing to do.</li>
+          <li><span class="tag minor">Keep an eye on it</span> Worth knowing, no action needed now.</li>
+          <li><span class="tag soon">Get it checked</span> OK to drive, but book a garage visit soon.</li>
+          <li><span class="tag urgent">Act now</span> Could cause damage or leave you stranded.</li>
+        </ul>
+        <p>This app gives guidance, not a guarantee. If the car feels unsafe, or a red warning shows on the dashboard, stop and get help regardless of what the app says.</p>
+      </details>
+
+      <details class="card">
+        <summary>Google Maps on the car's screen</summary>
+        <p>You do not need this app or the adapter for that. Your Tiguan can show Google Maps from your phone using <strong>Android Auto</strong>, which VW calls <strong>App-Connect</strong>. It is free and always has up-to-date maps and live traffic.</p>
+        <ol>
+          <li>Use a good quality USB cable (the one that came with your phone is best).</li>
+          <li>Plug the phone into the USB socket in the storage tray in front of the gear lever.</li>
+          <li>On the car's screen press <strong>App</strong> or <strong>Menu</strong>, then <strong>App-Connect</strong>, then <strong>Android Auto</strong>.</li>
+          <li>Accept the prompts on the phone. Google Maps now appears on the car's screen.</li>
+        </ol>
+        <p><strong>If App-Connect is missing or asks for an activation code</strong>, your car has the feature fitted but switched off. A VW dealer or independent VW specialist can switch it on for a one-off fee. That is still usually cheaper than paying for map updates, and you only pay once.</p>
+        <p><strong>Want it without a cable?</strong> Once wired Android Auto works, a small "wireless Android Auto adapter" that plugs into the same USB socket makes it connect automatically.</p>
+      </details>
+
+      <details class="card" id="aa-card">
+        <summary>Android Auto isn't working — why?</summary>
+        <p>This reads your car's touchscreen unit and works out which situation you are in. It cannot switch Android Auto on — that needs a signed activation code for your exact unit that only a dealer or specialist coder can supply — but it tells you whether that is even what you need, so you do not pay for the wrong thing.</p>
+        <button id="btn-aa" class="primary" data-needs-conn>Check my car's unit</button>
+        <p id="aa-status" class="status" role="status"></p>
+        <div id="aa-out"></div>
+      </details>
+
+      <details class="card">
+        <summary>Updating the car's own maps and software</summary>
+        <p><strong>Built-in maps.</strong> If your car has the "Discover Media" navigation system, VW has offered map updates as a free download from its website, which you copy onto the car's SD card yourself. Search for "Volkswagen map update Discover Media" on VW's official site for your country before paying anyone.</p>
+        <p><strong>The car's computers.</strong> This app shows the software version of each computer in your car (open a system under "Systems checked"). It deliberately cannot change that software: updates are locked to VW's own dealer equipment, and attempting one with a small Bluetooth adapter can permanently break the part. If a dealer says an update is available, the versions shown here let you check it was really applied.</p>
+      </details>
+
+      <details class="card">
+        <summary>Turn off the engine warning light</summary>
+        <p>This wipes the engine's stored faults and switches the warning light off. Only do it after a repair, or to see whether a one-off fault comes back.</p>
+        <ul>
+          <li>It does not fix anything. If the problem is still there the light will return.</li>
+          <li>The car then needs a few days of normal driving to re-run its self-tests. It may be turned away from an MOT emissions test until it has.</li>
+          <li>Do it with the ignition on and the engine off.</li>
+        </ul>
+        <button id="btn-clear" class="danger" data-needs-conn>Turn off warning light</button>
+        <p id="clear-status" class="status" role="status"></p>
+      </details>
+
+      <details class="card">
+        <summary>Words you might see</summary>
+        <dl class="glossary">
+          <dt>Fault code</dt><dd>A short reference like P0299 that the car stores when it notices a problem. Garages use these to look up what went wrong.</dd>
+          <dt>Engine warning light</dt><dd>The amber engine-shaped light on the dashboard. Steady means "get it checked"; flashing means "stop when safe".</dd>
+          <dt>Limp mode</dt><dd>When the car deliberately limits its power to protect itself after detecting a fault.</dd>
+          <dt>Emissions self-tests</dt><dd>Checks the car runs on itself while you drive. They restart from scratch after faults are cleared or the battery is disconnected.</dd>
+          <dt>VIN</dt><dd>Your car's unique 17-character identity number.</dd>
+          <dt>Turbo</dt><dd>A pump driven by the exhaust that pushes extra air into the engine for more power.</dd>
+        </dl>
+      </details>
+
+      <details class="card" id="tech">
+        <summary>Technical log (for troubleshooting)</summary>
+        <p class="muted">The raw conversation with the adapter. If something does not work, copy this and send it to whoever is helping you.</p>
+        <div class="row">
+          <button id="btn-copy-log">Copy log</button>
+          <button id="btn-clear-log">Clear</button>
+        </div>
+        <pre id="log" class="log"></pre>
+      </details>
+    </section>
+  </main>
+
+  <nav class="tabs" aria-label="Sections">
+    <button data-tab="check" class="active">Check</button>
+    <button data-tab="live">Live</button>
+    <button data-tab="trips">Trips</button>
+    <button data-tab="help">Help</button>
+  </nav>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
