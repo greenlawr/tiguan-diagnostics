@@ -290,3 +290,57 @@ test('report diff highlights new and cleared faults', async () => {
   assert.equal(diff.milChanged, true);
   assert.equal(diffReports(after, null), null);
 });
+
+// ---------- car hub (fuel, renewals, mileage) ----------
+import { fuelStats, renewals, countdown, mileageSummary, mileageExport, parkMapsUrl, timeAgo } from '../js/garage.js';
+
+test('fuel stats compute MPG between full fill-ups', () => {
+  const fills = [
+    { date: '2026-01-01', odo: 40000, litres: 50, cost: 70, full: true },
+    { date: '2026-01-10', odo: 40300, litres: 20, cost: 28, full: false },
+    { date: '2026-01-20', odo: 40600, litres: 40, cost: 56, full: true }, // 600 mi on 60 L
+  ];
+  const s = fuelStats(fills);
+  assert.equal(s.segments.length, 1);
+  // 600 miles / (60 / 4.54609 gal) = ~45.5 mpg
+  assert.ok(Math.abs(s.segments[0].mpg - 45.5) < 0.5);
+  assert.ok(Math.abs(s.latestMpg - 45.5) < 0.5);
+  assert.ok(Math.abs(s.segments[0].costPerMile - (84 / 600)) < 0.001); // 28+56 over 600 mi
+  assert.equal(s.totalSpend, 154);
+  assert.ok(Math.abs(s.lastPricePerLitre - 140) < 0.1); // 56/40 = £1.40 => 140 p/L
+});
+
+test('fuel stats cope with no complete segment', () => {
+  const s = fuelStats([{ date: '2026-01-01', odo: 40000, litres: 50, cost: 70, full: true }]);
+  assert.equal(s.latestMpg, null);
+  assert.equal(s.avgMpg, null);
+  assert.equal(s.totalSpend, 70);
+});
+
+test('renewals sort by urgency and band correctly', () => {
+  const now = new Date('2026-06-01T12:00:00');
+  const list = renewals({ mot: '2026-06-10', tax: '2026-05-01', insurance: '2026-09-01' }, now);
+  assert.deepEqual(list.map((r) => r.key), ['tax', 'mot', 'insurance']); // overdue first
+  assert.equal(list[0].level, 'urgent');
+  assert.equal(countdown('2026-06-10', 'MOT', now).level, 'soon');
+  assert.equal(renewals({}, now).length, 0);
+});
+
+test('mileage reclaim uses HMRC bands', () => {
+  const m = mileageSummary([
+    { miles: 100, business: true },
+    { miles: 40, business: false },
+  ]);
+  assert.equal(m.businessMiles, 100);
+  assert.equal(m.totalMiles, 140);
+  assert.ok(Math.abs(m.reclaim - 45) < 0.01); // 100 * 0.45
+  const big = mileageSummary([{ miles: 12000, business: true }]);
+  assert.ok(Math.abs(big.reclaim - (10000 * 0.45 + 2000 * 0.25)) < 0.01);
+  assert.match(mileageExport([{ date: '2026-01-01', miles: 10, purpose: 'Venue "A"', business: true }]), /Venue ""A""/);
+});
+
+test('parking helpers', () => {
+  assert.match(parkMapsUrl({ lat: 51.45, lng: -2.6 }), /destination=51\.45,-2\.6/);
+  assert.equal(parkMapsUrl(null), null);
+  assert.equal(timeAgo(new Date(Date.now() - 90000).toISOString()), '2 min ago');
+});

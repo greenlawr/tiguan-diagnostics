@@ -8,7 +8,8 @@ import { LEVEL_LABEL, priceSearchUrl } from './explain.js';
 import { runHealthCheck, reportText, stateText, diffReports } from './report.js';
 import { diagnoseAppConnect, dealerSummary, CHECKLIST } from './appconnect.js';
 import { Trip, fuelRateFrom5E, fuelRateFromMaf, mpgUk } from './trip.js';
-import { motCountdown, calendarUrl, cleanReg, GOV_MOT_HISTORY, GOV_TAX_CHECK } from './vehicle.js';
+import { calendarUrl, cleanReg, GOV_MOT_HISTORY, GOV_TAX_CHECK } from './vehicle.js';
+import { fuelStats, renewals, parkMapsUrl, timeAgo, mileageSummary, mileageExport } from './garage.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -711,38 +712,49 @@ function renderTrips() {
   }
 }
 
-// ---------- my car & MOT ----------
+// ---------- car hub: shared storage ----------
+const store = {
+  load(key, fallback) {
+    try {
+      return JSON.parse(localStorage.getItem(key)) ?? fallback;
+    } catch {
+      return fallback;
+    }
+  },
+  save(key, value) {
+    try {
+      localStorage.setItem(key, JSON.stringify(value));
+    } catch {
+      /* storage unavailable */
+    }
+  },
+};
 const VEHICLE_KEY = 'tiguan-vehicle';
-function loadVehicle() {
-  try {
-    return JSON.parse(localStorage.getItem(VEHICLE_KEY)) || {};
-  } catch {
-    return {};
-  }
-}
-function saveVehicle(v) {
-  try {
-    localStorage.setItem(VEHICLE_KEY, JSON.stringify(v));
-  } catch {
-    /* ignore */
-  }
-}
-function refreshVehicle() {
+const FUEL_KEY = 'tiguan-fuel';
+const SERVICE_KEY = 'tiguan-service';
+const MILEAGE_KEY = 'tiguan-mileage';
+const PARK_KEY = 'tiguan-park';
+const loadVehicle = () => store.load(VEHICLE_KEY, {});
+const saveVehicle = (v) => store.save(VEHICLE_KEY, v);
+
+const fmtDate = (iso) => new Date(iso + (iso.length === 10 ? 'T00:00:00' : '')).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+
+// Renewals + registration
+function refreshRenewals() {
   const v = loadVehicle();
-  const reg = v.reg || '';
-  const mot = v.mot || '';
-  const cd = motCountdown(mot);
-  const box = $('mot-countdown');
-  if (cd) {
-    box.textContent = cd.text;
-    box.className = 'status tag ' + cd.level;
+  const out = $('renewals-out');
+  const list = renewals({ mot: v.mot, tax: v.tax, insurance: v.insurance, service: v.service });
+  out.replaceChildren();
+  if (!list.length) {
+    out.append(el('p', { class: 'muted small', text: 'Add any dates below to get reminders here.' }));
   } else {
-    box.textContent = '';
-    box.className = 'status';
+    const ul = el('ul', { class: 'list' });
+    for (const r of list) ul.append(el('li', {}, el('div', { class: 'line' }, el('div', { class: 'name', text: r.label }), el('span', { class: 'tag ' + r.level, text: r.text.replace(r.label + ' ', '') }))));
+    out.append(ul);
   }
   $('lnk-mot').href = GOV_MOT_HISTORY;
   $('lnk-tax').href = GOV_TAX_CHECK;
-  const cal = mot ? calendarUrl(reg, mot) : null;
+  const cal = v.mot ? calendarUrl(v.reg, v.mot) : null;
   $('lnk-cal').hidden = !cal;
   if (cal) $('lnk-cal').href = cal;
 }
@@ -750,14 +762,174 @@ $('reg-input').addEventListener('input', (e) => {
   const v = loadVehicle();
   v.reg = cleanReg(e.target.value);
   saveVehicle(v);
-  refreshVehicle();
+  refreshRenewals();
 });
-$('mot-input').addEventListener('change', (e) => {
+for (const key of ['mot', 'tax', 'insurance', 'service']) {
+  $(key + '-input').addEventListener('change', (e) => {
+    const v = loadVehicle();
+    v[key] = e.target.value;
+    saveVehicle(v);
+    refreshRenewals();
+  });
+}
+
+// Where did I park?
+function renderPark() {
+  const spot = store.load(PARK_KEY, null);
+  const out = $('park-out');
+  if (!spot) {
+    out.textContent = 'No spot saved yet.';
+    $('lnk-park').hidden = true;
+    return;
+  }
+  out.textContent = `Saved ${timeAgo(spot.time)}.`;
+  $('lnk-park').hidden = false;
+  $('lnk-park').href = parkMapsUrl(spot);
+}
+$('btn-park').addEventListener('click', () => {
+  if (!navigator.geolocation) {
+    $('park-out').textContent = 'This phone will not share its location with the app.';
+    return;
+  }
+  $('park-out').textContent = 'Getting your location…';
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      store.save(PARK_KEY, { lat: pos.coords.latitude, lng: pos.coords.longitude, time: new Date().toISOString() });
+      renderPark();
+    },
+    () => {
+      $('park-out').textContent = 'Could not get your location. Allow location access and try again.';
+    },
+    { enableHighAccuracy: true, timeout: 10000 }
+  );
+});
+
+// Fuel log
+const num = (id) => parseFloat($(id).value) || 0;
+function renderFuel() {
+  const fills = store.load(FUEL_KEY, []);
+  const s = fuelStats(fills);
+  const tiles = [
+    ['Latest', s.latestMpg ? s.latestMpg.toFixed(1) : '—', 'mpg'],
+    ['Average', s.avgMpg ? s.avgMpg.toFixed(1) : '—', 'mpg'],
+    ['Total spent', '£' + s.totalSpend.toFixed(0), ''],
+    ['Pump price', s.lastPricePerLitre ? s.lastPricePerLitre.toFixed(1) : '—', 'p/L'],
+  ];
+  $('fuel-stats').replaceChildren(
+    ...tiles.map(([label, value, unit]) => el('div', { class: 'tile' }, el('div', { class: 'label', text: label }), el('div', { class: 'value' }, el('span', { text: value }), unit ? el('span', { class: 'unit', text: ' ' + unit }) : null)))
+  );
+  const list = $('fuel-list');
+  list.replaceChildren();
+  const bySeg = new Map(s.segments.map((seg) => [seg.toOdo, seg]));
+  for (const f of [...fills].sort((a, b) => b.odo - a.odo)) {
+    const seg = bySeg.get(f.odo);
+    const detail = `${f.litres.toFixed(1)} L${f.cost ? ` · £${f.cost.toFixed(2)}` : ''} · ${f.odo.toLocaleString()} mi${seg ? ` · ${seg.mpg.toFixed(1)} mpg` : ''}`;
+    list.append(deletableRow(fmtDate(f.date), detail, () => {
+      store.save(FUEL_KEY, store.load(FUEL_KEY, []).filter((x) => x.id !== f.id));
+      renderFuel();
+    }));
+  }
+}
+$('btn-fuel-add').addEventListener('click', () => {
+  const odo = num('fuel-odo');
+  const litres = num('fuel-litres');
+  if (!odo || !litres) {
+    alert('Please enter at least the mileage and litres.');
+    return;
+  }
+  const entry = { id: Date.now(), date: $('fuel-date').value || new Date().toISOString().slice(0, 10), odo, litres, cost: num('fuel-cost'), full: $('fuel-full').checked };
+  store.save(FUEL_KEY, [entry, ...store.load(FUEL_KEY, [])]);
+  for (const id of ['fuel-odo', 'fuel-litres', 'fuel-cost']) $(id).value = '';
+  renderFuel();
+});
+
+// Service history
+function renderService() {
+  const items = store.load(SERVICE_KEY, []);
+  const list = $('svc-list');
+  list.replaceChildren();
+  for (const r of [...items].sort((a, b) => (a.date < b.date ? 1 : -1))) {
+    const detail = `${r.odo ? r.odo.toLocaleString() + ' mi' : ''}${r.odo && r.cost ? ' · ' : ''}${r.cost ? '£' + r.cost.toFixed(2) : ''}`;
+    list.append(deletableRow(`${fmtDate(r.date)} — ${r.what}`, detail, () => {
+      store.save(SERVICE_KEY, store.load(SERVICE_KEY, []).filter((x) => x.id !== r.id));
+      renderService();
+    }));
+  }
+}
+$('btn-svc-add').addEventListener('click', () => {
+  const what = $('svc-what').value.trim();
+  if (!what) {
+    alert('Please say what was done.');
+    return;
+  }
+  const entry = { id: Date.now(), date: $('svc-date').value || new Date().toISOString().slice(0, 10), odo: num('svc-odo'), what, cost: num('svc-cost') };
+  store.save(SERVICE_KEY, [entry, ...store.load(SERVICE_KEY, [])]);
+  for (const id of ['svc-odo', 'svc-what', 'svc-cost']) $(id).value = '';
+  renderService();
+});
+
+// Mileage log
+function renderMileage() {
+  const trips = store.load(MILEAGE_KEY, []);
+  const m = mileageSummary(trips);
+  $('mileage-summary').replaceChildren(
+    el('div', { class: 'tile' }, el('div', { class: 'label', text: 'Business miles' }), el('div', { class: 'value' }, el('span', { text: Math.round(m.businessMiles).toLocaleString() }))),
+    el('div', { class: 'tile' }, el('div', { class: 'label', text: 'Reclaim estimate' }), el('div', { class: 'value' }, el('span', { text: '£' + m.reclaim.toFixed(0) })))
+  );
+  $('btn-mile-export').hidden = trips.length === 0;
+  const list = $('mileage-list');
+  list.replaceChildren();
+  for (const t of [...trips].sort((a, b) => (a.date < b.date ? 1 : -1))) {
+    const detail = `${t.miles} mi${t.business ? ' · business' : ''}`;
+    list.append(deletableRow(`${fmtDate(t.date)}${t.purpose ? ' — ' + t.purpose : ''}`, detail, () => {
+      store.save(MILEAGE_KEY, store.load(MILEAGE_KEY, []).filter((x) => x.id !== t.id));
+      renderMileage();
+    }));
+  }
+}
+$('btn-mile-add').addEventListener('click', () => {
+  const miles = num('mile-miles');
+  if (!miles) {
+    alert('Please enter the miles.');
+    return;
+  }
+  const entry = { id: Date.now(), date: $('mile-date').value || new Date().toISOString().slice(0, 10), miles, purpose: $('mile-purpose').value.trim(), business: $('mile-business').checked };
+  store.save(MILEAGE_KEY, [entry, ...store.load(MILEAGE_KEY, [])]);
+  $('mile-miles').value = '';
+  $('mile-purpose').value = '';
+  renderMileage();
+});
+$('btn-mile-export').addEventListener('click', async () => {
+  const text = mileageExport(store.load(MILEAGE_KEY, []));
+  try {
+    if (navigator.share) await navigator.share({ title: 'Mileage log', text });
+    else {
+      await navigator.clipboard.writeText(text);
+      $('btn-mile-export').textContent = 'Copied as spreadsheet text';
+      setTimeout(() => ($('btn-mile-export').textContent = 'Export for expenses'), 2000);
+    }
+  } catch {
+    /* share sheet closed */
+  }
+});
+
+/** A list row with a small delete button. */
+function deletableRow(name, detail, onDelete) {
+  const del = el('button', { class: 'del', 'aria-label': 'Delete', text: '✕' });
+  del.addEventListener('click', onDelete);
+  return el('li', {}, el('div', { class: 'line' }, el('div', {}, el('div', { class: 'name', text: name }), detail ? el('div', { class: 'sub', text: detail }) : null), del));
+}
+
+function initCarTab() {
   const v = loadVehicle();
-  v.mot = e.target.value;
-  saveVehicle(v);
-  refreshVehicle();
-});
+  if (v.reg) $('reg-input').value = v.reg;
+  for (const key of ['mot', 'tax', 'insurance', 'service']) if (v[key]) $(key + '-input').value = v[key];
+  refreshRenewals();
+  renderPark();
+  renderFuel();
+  renderService();
+  renderMileage();
+}
 
 // ---------- text size ----------
 const TEXT_KEY = 'tiguan-textsize';
@@ -791,12 +963,7 @@ $('btn-clear-log').addEventListener('click', () => {
 setConnected(false);
 renderHistory();
 renderTrips();
-(() => {
-  const v = loadVehicle();
-  if (v.reg) $('reg-input').value = v.reg;
-  if (v.mot) $('mot-input').value = v.mot;
-  refreshVehicle();
-})();
+initCarTab();
 try {
   applyTextSize(localStorage.getItem(TEXT_KEY) || 'normal');
 } catch {

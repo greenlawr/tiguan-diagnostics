@@ -4,11 +4,12 @@ A phone web app that talks to a 2017 VW Tiguan through a Bluetooth OBD-II adapte
 
 ## What it does
 
-Designed for someone who is not a mechanic. Four tabs:
+Designed for someone who is not a mechanic. Five tabs:
 
 | Tab | What you get |
 | --- | --- |
 | Check | One button, **Check my car**. Reads the engine warning light, battery, every fault code and every reachable VW control module, then gives a colour-coded verdict. Each fault explains what it means, whether you can keep driving, what to do, and a rough cost guide with a link to live part prices. **"What's changed"** compares each check to the last one. Reports can be shared with a garage and the last 12 are kept on the phone. Also a **My car & MOT** card: store your registration and MOT due date for a countdown, with links to the free official gov.uk MOT/tax checks and a one-tap calendar reminder. |
+| Car | A full ownership hub (works with no adapter): **renewal reminders** (MOT, tax, insurance, service), a **fuel log** that works out your real MPG and cost-per-mile, **service & repair history**, a **"where did I park"** pin with directions back, and a **mileage log** with an HMRC business-reclaim estimate and export. All saved on the phone only. |
 | Live | Live sensor readings, each with a one-line explanation and a "Normal" / "Running hot" style judgement where one makes sense. |
 | Trips | Record a journey and see distance, speed and **real-world fuel economy (mpg)** with live speed and economy graphs. Past trips are saved on the phone. |
 | Help | Getting started, **text size**, what the colours mean, **Google Maps on the car screen (Android Auto)**, map and software updates, **an "Android Auto isn't working" check** (with a dealer-ready unit summary), turning off the warning light, a glossary and the technical log. |
@@ -91,5 +92,6 @@ npm start   # serve on http://localhost:8080
 | `js/report.js` | The health check, plus the change-since-last-check diff |
 | `js/trip.js` | Fuel-economy maths and trip recording |
 | `js/vehicle.js` | MOT countdown, gov.uk links, calendar reminder |
+| `js/garage.js` | Car hub: fuel economy, renewals, mileage/HMRC reclaim, parking |
 | `js/appconnect.js` | Read-only "why isn't Android Auto working?" diagnosis |
 | `js/simulator.js` | Pretend adapter and car for the demo mode and tests |

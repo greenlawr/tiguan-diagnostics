@@ -52,24 +52,92 @@
         <ul id="history-list" class="list"></ul>
       </div>
 
-      <div class="card" id="vehicle-card">
-        <h2>My car &amp; MOT</h2>
-        <p class="muted small">Saved on this phone only. The app can't read MOT data itself (that needs a government key), so it keeps a reminder and links you to the free official checks.</p>
+      <button id="btn-disconnect" class="link" hidden>Disconnect from car</button>
+    </section>
+
+    <!-- Car hub -->
+    <section id="tab-car" class="tab">
+      <div class="card">
         <label class="field">Registration
           <input id="reg-input" type="text" inputmode="text" autocapitalize="characters" autocomplete="off" placeholder="e.g. AB17 CDE">
         </label>
-        <label class="field">MOT due date
-          <input id="mot-input" type="date">
-        </label>
-        <div id="mot-countdown" class="status"></div>
+        <p class="muted small" style="margin:0">Everything on this tab is saved on this phone only — nothing is sent anywhere.</p>
+      </div>
+
+      <h3>Renewals</h3>
+      <div class="card">
+        <div id="renewals-out"></div>
+        <div class="grid2">
+          <label class="field">MOT due<input id="mot-input" type="date"></label>
+          <label class="field">Road tax due<input id="tax-input" type="date"></label>
+          <label class="field">Insurance due<input id="insurance-input" type="date"></label>
+          <label class="field">Next service<input id="service-input" type="date"></label>
+        </div>
         <div class="row">
           <a id="lnk-mot" class="btn-a" target="_blank" rel="noopener">Check MOT history (gov.uk)</a>
           <a id="lnk-tax" class="btn-a" target="_blank" rel="noopener">Check tax &amp; MOT status</a>
         </div>
         <a id="lnk-cal" class="btn-a" target="_blank" rel="noopener" hidden>Add MOT reminder to calendar</a>
+        <p class="muted small">The app can't read DVLA/MOT data itself (that needs a government key), so it keeps reminders and links you to the free official checks.</p>
       </div>
 
-      <button id="btn-disconnect" class="link" hidden>Disconnect from car</button>
+      <h3>Where did I park?</h3>
+      <div class="card center">
+        <button id="btn-park" class="primary">Save my parking spot</button>
+        <div id="park-out" class="status"></div>
+        <a id="lnk-park" class="btn-a" target="_blank" rel="noopener" hidden>Directions back to my car</a>
+      </div>
+
+      <h3>Fuel log</h3>
+      <div class="card">
+        <div id="fuel-stats" class="grid"></div>
+        <details class="inner-form">
+          <summary>Add a fill-up</summary>
+          <div class="grid2">
+            <label class="field">Date<input id="fuel-date" type="date"></label>
+            <label class="field">Mileage (miles)<input id="fuel-odo" type="number" inputmode="numeric" placeholder="e.g. 42150"></label>
+            <label class="field">Litres<input id="fuel-litres" type="number" inputmode="decimal" placeholder="e.g. 45.2"></label>
+            <label class="field">Cost (£)<input id="fuel-cost" type="number" inputmode="decimal" placeholder="e.g. 62.40"></label>
+          </div>
+          <label class="check"><input id="fuel-full" type="checkbox" checked> Filled the tank right up</label>
+          <button id="btn-fuel-add" class="primary">Add fill-up</button>
+          <p class="muted small">MPG is worked out between full fill-ups, so tick the box when you brim it.</p>
+        </details>
+        <ul id="fuel-list" class="list"></ul>
+      </div>
+
+      <h3>Service &amp; repairs</h3>
+      <div class="card">
+        <details class="inner-form">
+          <summary>Add a record</summary>
+          <div class="grid2">
+            <label class="field">Date<input id="svc-date" type="date"></label>
+            <label class="field">Mileage<input id="svc-odo" type="number" inputmode="numeric" placeholder="miles"></label>
+          </div>
+          <label class="field">What was done<input id="svc-what" type="text" placeholder="e.g. Oil &amp; filter service"></label>
+          <label class="field">Cost (£)<input id="svc-cost" type="number" inputmode="decimal" placeholder="optional"></label>
+          <button id="btn-svc-add" class="primary">Add record</button>
+        </details>
+        <ul id="svc-list" class="list"></ul>
+      </div>
+
+      <h3>Mileage log</h3>
+      <div class="card">
+        <div id="mileage-summary" class="grid"></div>
+        <details class="inner-form">
+          <summary>Add a trip</summary>
+          <div class="grid2">
+            <label class="field">Date<input id="mile-date" type="date"></label>
+            <label class="field">Miles<input id="mile-miles" type="number" inputmode="decimal" placeholder="e.g. 32"></label>
+          </div>
+          <label class="field">Purpose<input id="mile-purpose" type="text" placeholder="e.g. Meeting at Bristol Old Vic"></label>
+          <label class="check"><input id="mile-business" type="checkbox" checked> Business trip</label>
+          <button id="btn-mile-add" class="primary">Add trip</button>
+        </details>
+        <button id="btn-mile-export" class="link" hidden>Export for expenses</button>
+        <ul id="mileage-list" class="list"></ul>
+        <p class="muted small">Business reclaim uses HMRC's approved rates (45p/mile to 10,000 miles, then 25p). A guide only, not tax advice.</p>
+      </div>
     </section>
 
     <!-- Trips -->
@@ -204,6 +272,7 @@
 
   <nav class="tabs" aria-label="Sections">
     <button data-tab="check" class="active">Check</button>
+    <button data-tab="car">Car</button>
     <button data-tab="live">Live</button>
     <button data-tab="trips">Trips</button>
     <button data-tab="help">Help</button>

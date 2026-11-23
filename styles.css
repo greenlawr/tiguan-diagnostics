@@ -233,6 +233,13 @@ details li { margin-bottom: 6px; }
   margin-bottom: 8px;
 }
 #text-size button.active { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 10px; }
+.check { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; font-size: 15px; }
+.check input { width: 22px; height: 22px; }
+details.inner-form { margin-bottom: 10px; }
+details.inner-form > summary { color: var(--accent); font-weight: 600; margin-bottom: 10px; }
+button.del { min-height: 36px; padding: 6px 10px; background: none; border: 0; color: var(--muted); font-size: 16px; align-self: center; }
+h3 { margin-top: 18px; }
 
 /* Trip stats + charts */
 .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-bottom: 12px; }
