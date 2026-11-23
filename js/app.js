@@ -61,6 +61,43 @@ const store = {
   },
 };
 
+// ---------- toast feedback (+ undo) ----------
+let toastTimer = null;
+function toast(message, { actionLabel, onAction, ms = 5000 } = {}) {
+  const t = $('toast');
+  t.replaceChildren(el('span', { text: message }));
+  if (actionLabel) {
+    const btn = el('button', { text: actionLabel });
+    btn.addEventListener('click', () => { clearTimeout(toastTimer); t.hidden = true; onAction && onAction(); });
+    t.append(btn);
+  }
+  t.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => (t.hidden = true), ms);
+}
+
+/** Delete an item from an array collection with a 5s Undo (no scary dialog). */
+function deleteItem(key, id, rerender, { photoId, label } = {}) {
+  const items = store.load(key, []);
+  const index = items.findIndex((x) => x.id === id);
+  if (index < 0) return;
+  const item = items[index];
+  store.save(key, items.filter((x) => x.id !== id));
+  rerender();
+  let undone = false;
+  toast(`Deleted${label ? ' ' + label : ''}`, {
+    actionLabel: 'Undo',
+    onAction: () => {
+      undone = true;
+      const now = store.load(key, []);
+      now.splice(Math.min(index, now.length), 0, item);
+      store.save(key, now);
+      rerender();
+    },
+  });
+  if (photoId) setTimeout(() => { if (!undone) deletePhoto(photoId); }, 5300); // keep the photo until Undo expires
+}
+
 // ---------- technical log ----------
 function log(direction, text) {
   const stamp = new Date().toTimeString().slice(0, 8);
@@ -1108,11 +1145,32 @@ $('btn-del-add').addEventListener('click', () => {
   for (const id of ['del-item', 'del-tracking', 'del-expected']) $(id).value = '';
   renderDeliveries();
   renderDashboard();
+  toast('Delivery added ✓');
 });
 
 function greeting() {
   const h = new Date().getHours();
   return h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening';
+}
+
+function isAppEmpty() {
+  const v = loadVehicle();
+  const anyList = [DOCS_KEY, UTIL_KEY, SUBS_KEY, DELIVERIES_KEY, LOYAL_KEY, MAINT_KEY, CHECK_KEY, INV_KEY].some((k) => store.load(k, []).length);
+  const anyShopping = Object.values(store.load(SHARED_KEY, {})).some((i) => !i.deleted);
+  return !anyList && !anyShopping && !v.reg && !v.mot;
+}
+function welcomeCard() {
+  const card = el('div', { class: 'card' },
+    el('h2', { text: 'Welcome to Evergreen 🌲' }),
+    el('p', { class: 'muted', text: 'Your private home for life admin. The quickest way to fill it in: tell Claude your details and paste them in with Quick Import, or scan a document. Or just tap a tile below to add things one at a time.' }));
+  const row = el('div', { class: 'row' });
+  const imp = el('button', { class: 'primary', text: 'Quick import' });
+  imp.addEventListener('click', () => { showTab('help'); $('import-card').open = true; $('import-card').scrollIntoView({ behavior: 'smooth' }); });
+  const scan = el('button', { text: 'Scan a document' });
+  scan.addEventListener('click', () => goLife('documents'));
+  row.append(imp, scan);
+  card.append(row);
+  return card;
 }
 
 const HOME_TILES = [
@@ -1173,6 +1231,9 @@ function renderDashboard() {
     el('p', { text: summary })
   );
   out.replaceChildren(card);
+
+  if (isAppEmpty()) out.append(welcomeCard());
+
   if (items.length) {
     const list = el('ul', { class: 'list' });
     for (const i of items.slice(0, 8)) {
@@ -1218,12 +1279,7 @@ function renderDocs() {
     const card = el('div', { class: 'card doc' }, head);
     attachPhoto(card, d, d.label);
     const del = el('button', { class: 'link del-wide', text: 'Delete' });
-    del.addEventListener('click', () => {
-      if (!confirm(`Delete "${d.label}"?`)) return;
-      if (d.photoId) deletePhoto(d.photoId);
-      store.save(DOCS_KEY, store.load(DOCS_KEY, []).filter((x) => x.id !== d.id));
-      renderDocs();
-    });
+    del.addEventListener('click', () => deleteItem(DOCS_KEY, d.id, renderDocs, { photoId: d.photoId, label: d.label }));
     card.append(del);
     out.append(card);
   }
@@ -1264,6 +1320,7 @@ $('btn-doc-add').addEventListener('click', async () => {
     for (const id of ['doc-label', 'doc-note', 'doc-expiry', 'doc-photo']) $(id).value = '';
     $('doc-form').open = false;
     renderDocs();
+    toast('Document added ✓');
   } catch (e) {
     alert(e.message || 'Could not add the document.');
   } finally {
@@ -1316,7 +1373,7 @@ function renderUtilities() {
     if (COMPARE[u.type]) actions.append(el('a', { class: 'btn-a', href: COMPARE[u.type], target: '_blank', rel: 'noopener', text: 'Compare site' }));
     if (u.renewal) actions.append(el('a', { class: 'btn-a', href: calendarEvent(`${u.type} renewal${u.provider ? ' – ' + u.provider : ''}`, u.renewal, { guests: partnerEmail() }), target: '_blank', rel: 'noopener', text: 'Remind me' }));
     const del = el('button', { class: 'del', text: '✕' });
-    del.addEventListener('click', () => { store.save(UTIL_KEY, items.filter((x) => x.id !== u.id)); renderUtilities(); renderDashboard(); });
+    del.addEventListener('click', () => deleteItem(UTIL_KEY, u.id, () => { renderUtilities(); renderDashboard(); }, { label: u.type }));
     actions.append(del);
     row.append(actions);
     if (u.recommendation) {
@@ -1375,7 +1432,7 @@ $('btn-util-add').addEventListener('click', () => {
   const entry = { id: Date.now(), type: $('util-type').value, provider: $('util-provider').value.trim(), tariff: $('util-tariff').value.trim(), cost: parseFloat($('util-cost').value) || 0, renewal: $('util-renewal').value, usage: $('util-usage').value.trim() };
   store.save(UTIL_KEY, [entry, ...store.load(UTIL_KEY, [])]);
   for (const id of ['util-provider', 'util-tariff', 'util-cost', 'util-renewal', 'util-usage']) $(id).value = '';
-  renderUtilities(); renderDashboard();
+  renderUtilities(); renderDashboard(); toast('Plan added ✓');
 });
 
 // Subscriptions
@@ -1390,7 +1447,7 @@ function renderSubs() {
   list.replaceChildren();
   for (const s of subs) {
     list.append(deletableRow(s.name, `${money(s.cost)} ${s.cycle}${s.renewal ? ' · renews ' + fmtDate(s.renewal) : ''}`, () => {
-      store.save(SUBS_KEY, store.load(SUBS_KEY, []).filter((x) => x.id !== s.id)); renderSubs(); renderDashboard();
+      deleteItem(SUBS_KEY, s.id, () => { renderSubs(); renderDashboard(); }, { label: s.name });
     }));
   }
 }
@@ -1400,7 +1457,7 @@ $('btn-subs-add').addEventListener('click', () => {
   const entry = { id: Date.now(), name, cost: parseFloat($('subs-cost').value) || 0, cycle: $('subs-cycle').value, renewal: $('subs-renewal').value };
   store.save(SUBS_KEY, [entry, ...store.load(SUBS_KEY, [])]);
   for (const id of ['subs-name', 'subs-cost', 'subs-renewal']) $(id).value = '';
-  renderSubs(); renderDashboard();
+  renderSubs(); renderDashboard(); toast('Subscription added ✓');
 });
 
 // Tax
@@ -1452,7 +1509,7 @@ function renderInventory() {
     const card = el('div', { class: 'card doc' }, el('div', { class: 'line' }, el('div', {}, el('div', { class: 'name', text: it.name }), el('div', { class: 'sub', text: sub })), null));
     attachPhoto(card, it, it.name);
     const del = el('button', { class: 'link del-wide', text: 'Delete' });
-    del.addEventListener('click', () => { if (it.photoId) deletePhoto(it.photoId); store.save(INV_KEY, items.filter((x) => x.id !== it.id)); renderInventory(); });
+    del.addEventListener('click', () => deleteItem(INV_KEY, it.id, renderInventory, { photoId: it.photoId, label: it.name }));
     card.append(del);
     list.append(card);
   }
@@ -1509,7 +1566,7 @@ function renderMaint() {
       el('div', {}, el('div', { class: 'name', text: m.task }), m.date ? el('div', { class: 'sub', text: fmtDate(m.date) }) : null),
       cd ? el('span', { class: 'tag ' + cd.level, text: cd.text.replace(m.task + ' ', '') }) : null));
     const del = el('button', { class: 'del', text: '✕' });
-    del.addEventListener('click', () => { store.save(MAINT_KEY, items.filter((x) => x.id !== m.id)); renderMaint(); renderDashboard(); });
+    del.addEventListener('click', () => deleteItem(MAINT_KEY, m.id, () => { renderMaint(); renderDashboard(); }, { label: m.task }));
     row.querySelector('.line').append(del);
     list.append(row);
   }
@@ -1534,7 +1591,7 @@ function renderCheckups() {
       el('div', {}, el('div', { class: 'name', text: c.type }), el('div', { class: 'sub', text: c.last ? 'Last ' + fmtDate(c.last) : '' })),
       cd ? el('span', { class: 'tag ' + cd.level, text: cd.text.replace(c.type + ' ', '') }) : null));
     const del = el('button', { class: 'del', text: '✕' });
-    del.addEventListener('click', () => { store.save(CHECK_KEY, items.filter((x) => x.id !== c.id)); renderCheckups(); renderDashboard(); });
+    del.addEventListener('click', () => deleteItem(CHECK_KEY, c.id, () => { renderCheckups(); renderDashboard(); }, { label: c.type }));
     row.querySelector('.line').append(del);
     list.append(row);
   }
@@ -1586,7 +1643,7 @@ function renderLoyalty() {
   out.replaceChildren();
   for (const c of cards) {
     const card = el('div', { class: 'card' },
-      el('div', { class: 'line' }, el('div', { class: 'name', text: c.name }), (() => { const d = el('button', { class: 'del', text: '✕' }); d.addEventListener('click', () => { store.save(LOYAL_KEY, cards.filter((x) => x.id !== c.id)); renderLoyalty(); }); return d; })()),
+      el('div', { class: 'line' }, el('div', { class: 'name', text: c.name }), (() => { const d = el('button', { class: 'del', text: '✕' }); d.addEventListener('click', () => deleteItem(LOYAL_KEY, c.id, renderLoyalty, { label: c.name })); return d; })()),
       el('div', { class: 'loyal-number', text: c.number })
     );
     out.append(card);
@@ -1600,6 +1657,7 @@ $('btn-loyal-add').addEventListener('click', () => {
   store.save(LOYAL_KEY, [{ id: Date.now(), name, number }, ...store.load(LOYAL_KEY, [])]);
   $('loyal-name').value = ''; $('loyal-number').value = '';
   renderLoyalty();
+  toast('Card added ✓');
 });
 
 let scanStream = null;
