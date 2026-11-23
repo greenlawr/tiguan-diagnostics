@@ -483,3 +483,87 @@ test('biometric wrap/unwrap round-trips the passphrase and rejects a wrong key',
   const wrongKey = webcrypto.getRandomValues(new Uint8Array(32));
   await assert.rejects(unwrapSecret(blob, wrongKey));
 });
+
+// ---------- shared household E2E crypto ----------
+import { generateHouseholdCode, normalizeCode, householdId, deriveSharedKey, encryptItem, decryptItem, mergeItems } from '../js/household.js';
+
+test('two phones sharing a code derive the same key and id, and interoperate', async () => {
+  const code = generateHouseholdCode();
+  assert.match(code, /^[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/);
+  // "Phone A" encrypts; "Phone B" (same code, typed loosely) decrypts.
+  const keyA = await deriveSharedKey(code);
+  const keyB = await deriveSharedKey(code.toLowerCase().replace(/-/g, ' '));
+  const blob = await encryptItem({ item: 'Milk', by: 'Lawrence' }, keyA);
+  assert.deepEqual(await decryptItem(blob, keyB), { item: 'Milk', by: 'Lawrence' });
+  // Same public id both sides; a different code does not.
+  assert.equal(await householdId(code), await householdId(normalizeCode(code)));
+  assert.notEqual(await householdId(code), await householdId(generateHouseholdCode()));
+  // Server can't read it.
+  assert.ok(!JSON.stringify(blob).includes('Milk'));
+  // Wrong code cannot decrypt.
+  await assert.rejects(decryptItem(blob, await deriveSharedKey(generateHouseholdCode())));
+});
+
+test('household id is 32 hex chars (valid server bucket)', async () => {
+  assert.match(await householdId('ABCD-EFGH-JKLM-NPQR'), /^[a-f0-9]{32}$/);
+});
+
+test('merge is last-write-wins per item', () => {
+  const local = { a: { id: 'a', updatedAt: 100, text: 'old' }, b: { id: 'b', updatedAt: 50 } };
+  const remote = { a: { id: 'a', updatedAt: 200, text: 'new' }, c: { id: 'c', updatedAt: 10 } };
+  const merged = mergeItems(local, remote);
+  assert.equal(merged.a.text, 'new');
+  assert.equal(merged.b.updatedAt, 50);
+  assert.ok(merged.c);
+});
+
+// ---------- end-to-end shared sync against a mock server ----------
+import http from 'node:http';
+import { syncShared } from '../js/sync.js';
+
+function mockSyncServer() {
+  const store = new Map();
+  const server = http.createServer((req, res) => {
+    const id = req.url.split('/').filter(Boolean).pop();
+    let body = '';
+    req.on('data', (c) => (body += c));
+    req.on('end', () => {
+      const cur = JSON.parse(store.get(id) || '{"items":{}}');
+      if (req.method === 'POST') {
+        const incoming = JSON.parse(body);
+        for (const [k, v] of Object.entries(incoming.items || {})) {
+          if (!cur.items[k] || v.updatedAt > cur.items[k].updatedAt) cur.items[k] = v;
+        }
+        store.set(id, JSON.stringify(cur));
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(cur));
+    });
+  });
+  return new Promise((resolve) => server.listen(0, () => resolve({ url: `http://localhost:${server.address().port}`, server, store })));
+}
+
+test('two partners converge through the server, which stores only ciphertext', async () => {
+  const { url, server, store } = await mockSyncServer();
+  const code = 'ABCD-EFGH-JKLM-NPQR';
+  try {
+    // Lawrence adds milk.
+    let lawrence = await syncShared(url, code, { m1: { text: 'Milk', done: false, updatedAt: 1000, deleted: false } });
+    assert.equal(lawrence.m1.text, 'Milk');
+    // Jess (same code, separate device) syncs and sees it, then adds bread.
+    let jess = await syncShared(url, code, { b1: { text: 'Bread', done: false, updatedAt: 1001, deleted: false } });
+    assert.equal(jess.m1.text, 'Milk');
+    assert.equal(jess.b1.text, 'Bread');
+    // Lawrence syncs again and now sees bread too.
+    lawrence = await syncShared(url, code, lawrence);
+    assert.equal(lawrence.b1.text, 'Bread');
+    // The server's stored blob contains no plaintext.
+    const stored = [...store.values()].join('');
+    assert.ok(stored.length > 0 && !stored.includes('Milk') && !stored.includes('Bread'));
+    // A partner with the wrong code sees nothing of ours.
+    const stranger = await syncShared(url, 'ZZZZ-ZZZZ-ZZZZ-ZZZZ', {});
+    assert.equal(Object.keys(stranger).length, 0);
+  } finally {
+    server.close();
+  }
+});

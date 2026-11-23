@@ -14,6 +14,8 @@ import { fuelStats, renewals, countdown, upcomingReminders, parkMapsUrl, timeAgo
 import { Vault } from './vault.js';
 import { CARRIER_NAMES, trackingUrl, parcelStatus, parseShared } from './deliveries.js';
 import { biometricAvailable, biometricConfigured, enableBiometric, unlockBiometric, disableBiometric } from './biometric.js';
+import { generateHouseholdCode, normalizeCode } from './household.js';
+import { syncShared } from './sync.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -1397,6 +1399,114 @@ $('btn-loyal-scan').addEventListener('click', async (e) => {
   }
 });
 
+// ---------- shared household (pairing + sync) ----------
+const SHARED_KEY = 'tiguan-shared';
+const now = () => Date.now();
+const settings = () => store.load(SETTINGS_KEY, {});
+const saveSettings = (patch) => store.save(SETTINGS_KEY, { ...settings(), ...patch });
+
+function paired() {
+  const s = settings();
+  return Boolean(s.householdCode && s.syncUrl);
+}
+function refreshPairUI() {
+  const s = settings();
+  const isPaired = paired();
+  $('pair-setup').hidden = isPaired;
+  $('pair-active').hidden = !isPaired;
+  $('shared-card').hidden = !isPaired;
+  if (isPaired) {
+    $('pair-code-show').textContent = s.householdCode;
+    renderShared();
+  }
+  if (s.syncUrl) $('sync-url').value = s.syncUrl;
+}
+$('sync-url').addEventListener('input', (e) => saveSettings({ syncUrl: e.target.value.trim() }));
+$('btn-pair-create').addEventListener('click', () => {
+  if (!settings().syncUrl) return setStatus('pair-status', 'Enter the sync server address first (see the sync-worker guide).', true);
+  const code = generateHouseholdCode();
+  saveSettings({ householdCode: code });
+  $('pair-code').textContent = code;
+  $('pair-code-box').hidden = false;
+  setStatus('pair-status', 'Created. Share the code with your partner, then tap below once done.');
+  refreshPairUI();
+  syncNow();
+});
+$('btn-pair-join').addEventListener('click', () => {
+  if (!settings().syncUrl) return setStatus('pair-status', 'Enter the sync server address first.', true);
+  const input = prompt('Enter the household code your partner shared:');
+  if (!input) return;
+  const code = normalizeCode(input);
+  if (code.length < 12) return setStatus('pair-status', 'That code looks too short.', true);
+  // Re-group for display (4x4).
+  const grouped = code.match(/.{1,4}/g).join('-');
+  saveSettings({ householdCode: grouped });
+  refreshPairUI();
+  setStatus('pair-status', '');
+  syncNow();
+});
+$('btn-pair-leave').addEventListener('click', () => {
+  if (!confirm('Leave the shared space on this phone? Your partner keeps theirs, and you can rejoin with the code.')) return;
+  saveSettings({ householdCode: '' });
+  store.save(SHARED_KEY, {});
+  refreshPairUI();
+});
+$('btn-sync').addEventListener('click', () => syncNow());
+
+let syncTimer = null;
+function scheduleSync() {
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(syncNow, 1200);
+}
+let syncing = false;
+async function syncNow() {
+  if (!paired() || syncing) return;
+  syncing = true;
+  setStatus('sync-status', 'Syncing…');
+  try {
+    const s = settings();
+    const merged = await syncShared(s.syncUrl, s.householdCode, store.load(SHARED_KEY, {}));
+    store.save(SHARED_KEY, merged);
+    renderShared();
+    setStatus('sync-status', 'Synced ' + new Date().toLocaleTimeString());
+  } catch (e) {
+    setStatus('sync-status', 'Could not sync (offline, or check the server address).', true);
+    log('info', 'Sync failed: ' + e.message);
+  } finally {
+    syncing = false;
+  }
+}
+
+function renderShared() {
+  const items = store.load(SHARED_KEY, {});
+  const list = $('shared-list');
+  list.replaceChildren();
+  const visible = Object.values(items).filter((i) => !i.deleted).sort((a, b) => a.updatedAt - b.updatedAt);
+  for (const it of visible) {
+    const box = el('input', { type: 'checkbox' });
+    box.checked = !!it.done;
+    box.addEventListener('change', () => { const all = store.load(SHARED_KEY, {}); all[it.id] = { ...all[it.id], done: box.checked, updatedAt: now() }; store.save(SHARED_KEY, all); renderShared(); scheduleSync(); });
+    const label = el('span', { class: 'name', text: it.text });
+    if (it.done) label.style.textDecoration = 'line-through';
+    const del = el('button', { class: 'del', text: '✕' });
+    del.addEventListener('click', () => { const all = store.load(SHARED_KEY, {}); all[it.id] = { ...all[it.id], deleted: true, updatedAt: now() }; store.save(SHARED_KEY, all); renderShared(); scheduleSync(); });
+    list.append(el('li', {}, el('label', { class: 'check', style: 'margin:0;flex:1' }, box, label), del));
+  }
+  if (!visible.length) list.append(el('li', { class: 'muted small', text: 'Nothing on the list.' }));
+}
+$('btn-shared-add').addEventListener('click', () => {
+  const text = $('shared-input').value.trim();
+  if (!text) return;
+  const all = store.load(SHARED_KEY, {});
+  const id = 's' + now() + Math.random().toString(36).slice(2, 6);
+  all[id] = { id, text, done: false, updatedAt: now(), deleted: false };
+  store.save(SHARED_KEY, all);
+  $('shared-input').value = '';
+  renderShared();
+  scheduleSync();
+});
+$('shared-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('btn-shared-add').click(); });
+
 function initLifeSections() {
   renderUtilities();
   renderSubs();
@@ -1409,6 +1519,8 @@ function initLifeSections() {
   renderCheckups();
   renderLoyalty();
   initEmergency();
+  refreshPairUI();
+  if (paired()) syncNow();
 }
 
 // ---------- text size ----------

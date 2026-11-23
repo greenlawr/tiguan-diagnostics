@@ -102,6 +102,9 @@ npm start   # serve on http://localhost:8080
 | `js/life.js` | UK tax estimators, subscriptions, health due-dates, meter usage |
 | `js/deliveries.js` | Parcel tracker; `js/loyalty` lives in app.js |
 | `js/deliveries.js` | Parcel tracker: courier links, status, share-sheet parsing |
+| `js/household.js` | End-to-end encryption for the shared Household space |
+| `js/sync.js` | Client sync for the shared space (push/pull ciphertext) |
+| `sync-worker/` | Free Cloudflare Worker for zero-knowledge sync (deploy guide inside) |
 | `js/garage.js` | Car hub: fuel economy, renewals, mileage/HMRC reclaim, parking |
 | `js/appconnect.js` | Read-only "why isn't Android Auto working?" diagnosis |
 | `js/simulator.js` | Pretend adapter and car for the demo mode and tests |
