@@ -9,7 +9,7 @@ import { runHealthCheck, reportText, stateText, diffReports } from './report.js'
 import { diagnoseAppConnect, dealerSummary, CHECKLIST } from './appconnect.js';
 import { Trip, fuelRateFrom5E, fuelRateFromMaf, mpgUk } from './trip.js';
 import { calendarUrl, cleanReg, GOV_MOT_HISTORY, GOV_TAX_CHECK } from './vehicle.js';
-import { fuelStats, renewals, countdown, parkMapsUrl, timeAgo, mileageSummary, mileageExport } from './garage.js';
+import { fuelStats, renewals, countdown, upcomingReminders, parkMapsUrl, timeAgo, mileageSummary, mileageExport } from './garage.js';
 import { Vault } from './vault.js';
 
 const $ = (id) => document.getElementById(id);
@@ -734,6 +734,7 @@ function refreshRenewals() {
   const cal = v.mot ? calendarUrl(v.reg, v.mot) : null;
   $('lnk-cal').hidden = !cal;
   if (cal) $('lnk-cal').href = cal;
+  renderDashboard();
 }
 $('reg-input').addEventListener('input', (e) => {
   const v = loadVehicle();
@@ -933,6 +934,42 @@ function compressImage(file, maxSize = 900, quality = 0.6) {
   });
 }
 
+function greeting() {
+  const h = new Date().getHours();
+  return h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening';
+}
+
+function renderDashboard() {
+  const out = $('dashboard');
+  if (!out) return;
+  const v = loadVehicle();
+  const items = upcomingReminders({
+    renewalDates: { mot: v.mot, tax: v.tax, insurance: v.insurance, service: v.service },
+    documents: store.load(DOCS_KEY, []),
+  });
+  const pressing = items.filter((i) => i.level === 'urgent' || i.level === 'soon').length;
+  const summary = !items.length
+    ? 'Nothing with a date yet — add renewals or documents below and they\'ll show here.'
+    : pressing
+      ? `${pressing} thing${pressing === 1 ? ' needs' : 's need'} attention soon.`
+      : 'Nothing pressing — you\'re on top of things.';
+  const card = el('div', { class: 'verdict ' + (items[0]?.level === 'urgent' ? 'urgent' : pressing ? 'soon' : 'ok') },
+    el('div', { class: 'headline', text: greeting() }),
+    el('p', { text: summary })
+  );
+  out.replaceChildren(card);
+  if (items.length) {
+    const list = el('ul', { class: 'list' });
+    for (const i of items.slice(0, 8)) {
+      list.append(el('li', {}, el('div', { class: 'line' },
+        el('div', {}, el('div', { class: 'name', text: i.label }), el('div', { class: 'sub', text: i.sub })),
+        el('span', { class: 'tag ' + i.level, text: i.text.replace(i.label + ' ', '') })
+      )));
+    }
+    out.append(el('div', { class: 'card' }, el('h2', { text: 'Coming up' }), list));
+  }
+}
+
 function renderDocs() {
   const docs = store.load(DOCS_KEY, []);
   const out = $('docs-out');
@@ -963,6 +1000,7 @@ function renderDocs() {
     card.append(del);
     out.append(card);
   }
+  renderDashboard();
 }
 
 $('btn-doc-add').addEventListener('click', async () => {
@@ -1167,6 +1205,7 @@ function initAll() {
   renderTrips();
   initCarTab();
   renderDocs();
+  renderDashboard();
   if (!bluetoothSupported()) {
     $('unsupported').hidden = false;
     $('btn-connect').disabled = true;

@@ -101,6 +101,22 @@ export function renewals(dates, now = new Date()) {
     .sort((a, b) => a.days - b.days);
 }
 
+// ---------- unified "coming up" ----------
+// Pulls every dated item across the app into one list, soonest first. New
+// sources (utilities, health, tax...) add their items here as they are built.
+export function upcomingReminders({ renewalDates = {}, documents = [] }, now = new Date()) {
+  const items = [];
+  for (const r of renewals(renewalDates, now)) {
+    items.push({ label: r.label, sub: 'Car', days: r.days, level: r.level, text: r.text });
+  }
+  for (const d of documents) {
+    if (!d.expiry) continue;
+    const cd = countdown(d.expiry, d.label, now);
+    if (cd) items.push({ label: d.label, sub: d.category, days: cd.days, level: cd.level, text: cd.text });
+  }
+  return items.sort((a, b) => a.days - b.days);
+}
+
 // ---------- parking ----------
 export function parkMapsUrl(spot) {
   if (!spot) return null;

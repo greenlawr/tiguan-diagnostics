@@ -390,3 +390,21 @@ test('vault backup restores onto a clean device', async () => {
   await v2.restore(backup, 'pw');
   assert.deepEqual(v2.get('tiguan-vehicle', {}), { reg: 'AB17 CDE' });
 });
+
+// ---------- unified coming-up dashboard ----------
+import { upcomingReminders } from '../js/garage.js';
+
+test('upcomingReminders merges car renewals and document expiries, soonest first', () => {
+  const now = new Date('2026-06-01T12:00:00');
+  const items = upcomingReminders({
+    renewalDates: { mot: '2026-07-01', tax: '2026-05-20' },
+    documents: [
+      { label: 'Passport', category: 'Passport', expiry: '2026-06-15' },
+      { label: 'Gym', category: 'Membership' }, // no date, skipped
+    ],
+  }, now);
+  assert.deepEqual(items.map((i) => i.label), ['Road tax', 'Passport', 'MOT']);
+  assert.equal(items[0].level, 'urgent'); // tax overdue
+  assert.equal(items[1].sub, 'Passport');
+  assert.equal(upcomingReminders({}, now).length, 0);
+});
