@@ -1267,8 +1267,12 @@ function upcomingEvents(days = 7) {
     const d = new Date(nb.date + 'T00:00:00');
     if (d >= today && d < horizon) rows.push({ id: 'bday-' + c.id, title: `🎂 ${c.name}'s birthday${nb.turning ? ` (${nb.turning})` : ''}`, date: nb.date, time: '', who: 'Birthdays', virtual: true });
   }
-  rows.sort((a, b) => ((eventStart(a)?.getTime() || 0) - (eventStart(b)?.getTime() || 0)));
-  return groupEvents(rows); // the same event in both calendars (or an old copy) shows once
+  // Events from a connected calendar always belong to someone: if that phone had
+  // no name set, it's yours (your calendar) or your partner's (theirs).
+  const mySrc = settings().calSrc;
+  const labelled = rows.map((e) => (e.src && !e.who ? { ...e, who: e.src === mySrc ? myName() : partnerName() } : e));
+  labelled.sort((a, b) => ((eventStart(a)?.getTime() || 0) - (eventStart(b)?.getTime() || 0)));
+  return groupEvents(labelled); // the same event in both calendars (or an old copy) shows once
 }
 /** Drop events whose day has passed, so the store doesn't grow forever. */
 function pruneEvents() {
@@ -3455,7 +3459,7 @@ function renderLost() {
 
 // ---------- app updates ----------
 // Must match CACHE in sw.js (a test checks this).
-const APP_VERSION = 'evergreen-v55';
+const APP_VERSION = 'evergreen-v56';
 let updateReady = false;
 async function checkForUpdate(manual = false) {
   try {
