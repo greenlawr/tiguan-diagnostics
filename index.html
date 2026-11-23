@@ -218,11 +218,14 @@
             <select id="util-type"><option>Energy</option><option>Broadband</option><option>Mobile</option><option>Water</option><option>TV / streaming</option><option>Insurance</option><option>Other</option></select>
           </label>
           <label class="field">Provider<input id="util-provider" type="text" placeholder="e.g. Octopus"></label>
+          <label class="field">Tariff / plan name<input id="util-tariff" type="text" placeholder="e.g. Flexible 12M (optional)"></label>
           <div class="grid2">
             <label class="field">Monthly cost (£)<input id="util-cost" type="number" inputmode="decimal" placeholder="optional"></label>
             <label class="field">Renewal date<input id="util-renewal" type="date"></label>
           </div>
+          <label class="field">Your usage<input id="util-usage" type="text" placeholder="e.g. 8,000 kWh &amp; 2,500 kWh gas / yr, or 500GB"></label>
           <button id="btn-util-add" class="primary">Add plan</button>
+          <p class="muted small">The more you add (tariff + usage), the better the comparison I can do for you at renewal.</p>
         </details>
         <ul id="util-list" class="list"></ul>
       </div>

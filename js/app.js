@@ -1179,8 +1179,20 @@ function renderUtilities() {
     const row = el('div', { class: 'card doc' }, el('div', { class: 'line' },
       el('div', {}, el('div', { class: 'name', text: u.type }), el('div', { class: 'sub', text: sub })),
       cd ? el('span', { class: 'tag ' + cd.level, text: cd.text.replace(u.type + ' ', '') }) : null));
+    if (u.tariff || u.usage) {
+      row.append(el('div', { class: 'sub', style: 'margin-top:6px', text: [u.tariff, u.usage].filter(Boolean).join(' · ') }));
+    }
     const actions = el('div', { class: 'row', style: 'margin-top:10px' });
-    if (COMPARE[u.type]) actions.append(el('a', { class: 'btn-a', href: COMPARE[u.type], target: '_blank', rel: 'noopener', text: 'Compare deals' }));
+    const rec = el('button', { text: 'Get a recommendation' });
+    rec.addEventListener('click', async () => {
+      const text = utilityBrief(u);
+      try {
+        if (navigator.share) await navigator.share({ title: `Compare my ${u.type} deal`, text });
+        else { await navigator.clipboard.writeText(text); rec.textContent = 'Copied — paste it to Claude'; setTimeout(() => (rec.textContent = 'Get a recommendation'), 2500); }
+      } catch { /* share closed */ }
+    });
+    actions.append(rec);
+    if (COMPARE[u.type]) actions.append(el('a', { class: 'btn-a', href: COMPARE[u.type], target: '_blank', rel: 'noopener', text: 'Compare site' }));
     if (u.renewal) actions.append(el('a', { class: 'btn-a', href: calendarEvent(`${u.type} renewal${u.provider ? ' – ' + u.provider : ''}`, u.renewal, { guests: partnerEmail() }), target: '_blank', rel: 'noopener', text: 'Remind me' }));
     const del = el('button', { class: 'del', text: '✕' });
     del.addEventListener('click', () => { store.save(UTIL_KEY, items.filter((x) => x.id !== u.id)); renderUtilities(); renderDashboard(); });
@@ -1190,10 +1202,21 @@ function renderUtilities() {
   }
   if (!items.length) list.append(el('li', { class: 'muted small', text: 'No plans added.' }));
 }
+function utilityBrief(u) {
+  return [
+    `I'd like to compare my ${u.type.toLowerCase()} deal and find something cheaper (UK).`,
+    `Current provider: ${u.provider || '(not set)'}`,
+    u.tariff ? `Tariff: ${u.tariff}` : null,
+    u.cost ? `Paying: £${u.cost}/month (about £${Math.round(u.cost * 12)}/year)` : null,
+    u.usage ? `My usage: ${u.usage}` : null,
+    u.renewal ? `Contract ends / renews: ${fmtDate(u.renewal)}` : null,
+    'Please find current deals that beat this and recommend the best value, flagging any exit fees or switching catches.',
+  ].filter(Boolean).join('\n');
+}
 $('btn-util-add').addEventListener('click', () => {
-  const entry = { id: Date.now(), type: $('util-type').value, provider: $('util-provider').value.trim(), cost: parseFloat($('util-cost').value) || 0, renewal: $('util-renewal').value };
+  const entry = { id: Date.now(), type: $('util-type').value, provider: $('util-provider').value.trim(), tariff: $('util-tariff').value.trim(), cost: parseFloat($('util-cost').value) || 0, renewal: $('util-renewal').value, usage: $('util-usage').value.trim() };
   store.save(UTIL_KEY, [entry, ...store.load(UTIL_KEY, [])]);
-  for (const id of ['util-provider', 'util-cost', 'util-renewal']) $(id).value = '';
+  for (const id of ['util-provider', 'util-tariff', 'util-cost', 'util-renewal', 'util-usage']) $(id).value = '';
   renderUtilities(); renderDashboard();
 });
 
