@@ -394,7 +394,26 @@
         </div>
       </div>
 
-      <h3 id="sec-sharing">Sharing</h3>
+      <h3 id="sec-sharing">Sharing &amp; sync</h3>
+      <div class="card" id="pair-setup">
+        <p class="muted small">Share your shopping list, bills and tasks between your two phones. It syncs through a server that only ever sees encrypted data. One of you creates the space; the other joins with the same code. (Needs the free sync server set up once — see the guide.)</p>
+        <label class="field">Sync server address<input id="sync-url" type="url" autocapitalize="off" placeholder="https://evergreen-sync.…workers.dev"></label>
+        <div class="row">
+          <button id="btn-pair-create" class="primary">Create a shared space</button>
+          <button id="btn-pair-join">Join with a code</button>
+        </div>
+        <div id="pair-code-box" hidden>
+          <p class="muted small" style="margin-top:12px">Share this code with your partner (say it or message it). They enter it under "Join with a code".</p>
+          <div id="pair-code" class="loyal-number"></div>
+        </div>
+        <p id="pair-status" class="status" role="status"></p>
+      </div>
+      <div class="card" id="pair-active" hidden>
+        <div class="line"><div class="name">Sharing is on</div><button id="btn-pair-leave" class="del" aria-label="Stop sharing">✕</button></div>
+        <p class="muted small">Code: <span id="pair-code-show"></span></p>
+        <button id="btn-sync" class="primary">Sync now</button>
+        <p id="sync-status" class="status" role="status"></p>
+      </div>
       <div class="card">
         <p class="muted small">Add a partner's email to turn reminders into calendar invites you both get.</p>
         <label class="field">Partner's email<input id="partner-email" type="email" autocapitalize="off" placeholder="e.g. jess@example.com"></label>
@@ -444,26 +463,6 @@
         <ul id="task-list" class="list"></ul>
       </div>
 
-      <h3>Share with your partner</h3>
-      <div class="card" id="pair-setup">
-        <p class="muted small">Share the list above between two phones. It syncs through a server that only ever sees encrypted data. One of you creates the space; the other joins with the same code. (Needs the free sync server set up once — see the guide.)</p>
-        <label class="field">Sync server address<input id="sync-url" type="url" autocapitalize="off" placeholder="https://evergreen-sync.…workers.dev"></label>
-        <div class="row">
-          <button id="btn-pair-create" class="primary">Create a shared space</button>
-          <button id="btn-pair-join">Join with a code</button>
-        </div>
-        <div id="pair-code-box" hidden>
-          <p class="muted small" style="margin-top:12px">Share this code with your partner (say it or message it). They enter it under "Join with a code".</p>
-          <div id="pair-code" class="loyal-number"></div>
-        </div>
-        <p id="pair-status" class="status" role="status"></p>
-      </div>
-      <div class="card" id="pair-active" hidden>
-        <div class="line"><div class="name">Sharing is on</div><button id="btn-pair-leave" class="del" aria-label="Stop sharing">✕</button></div>
-        <p class="muted small">Code: <span id="pair-code-show"></span></p>
-        <button id="btn-sync" class="primary">Sync now</button>
-        <p id="sync-status" class="status" role="status"></p>
-      </div>
     </section>
 
     <!-- Trips -->
