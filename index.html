@@ -183,9 +183,18 @@
     <!-- Life admin: documents & renewals vault -->
     <section id="tab-life" class="tab">
       <h3 id="sec-calendar">Family calendar</h3>
+      <div class="card cal-card" id="cal-card">
+        <div class="cal-top">
+          <div><div class="cal-month" id="cal-month"></div><div id="cal-legend" class="cal-legend"></div></div>
+          <button id="btn-cal-new" class="primary cal-add-btn">+ Add</button>
+        </div>
+        <div id="cal-strip" class="cal-strip"></div>
+        <div id="cal-list"></div>
+        <button id="btn-cal-more" class="link" hidden>Show more</button>
+      </div>
       <div class="card" id="cal-connect">
-        <h2>Your Google Calendar</h2>
         <div id="cal-conn-off">
+          <h2>Connect your Google Calendar</h2>
           <p class="muted small">Each of you connects your own calendar on your own phone, and both of you see everything here and on Home. Your link stays encrypted on this phone.</p>
           <label class="field">Your calendar's secret address<input id="cal-ics" type="url" autocapitalize="off" autocomplete="off" placeholder="https://calendar.google.com/calendar/ical/…/basic.ics"></label>
           <button id="btn-cal-connect" class="primary">Connect my calendar</button>
@@ -199,29 +208,15 @@
             </ol>
           </details>
         </div>
-        <div id="cal-conn-on" hidden>
-          <p style="margin:0 0 8px"><strong>Connected ✓</strong> <span id="cal-conn-status" class="muted small"></span></p>
+        <details id="cal-conn-on" class="cal-settings" hidden>
+          <summary>Calendar settings <span id="cal-conn-status" class="muted small"></span></summary>
           <label class="field">Don't share events containing (comma-separated)<input id="cal-hide" type="text" autocomplete="off" placeholder="e.g. Foyer, Jack Francis, dentist"></label>
           <div class="row">
             <button id="btn-cal-refresh">Refresh now</button>
             <button id="btn-cal-disconnect">Disconnect</button>
           </div>
-        </div>
-        <p id="cal-conn-msg" class="status" role="status"></p>
-      </div>
-      <div class="card">
-        <p class="muted small">Everything coming up for the family — both of your Google Calendars, plus anything you add here.</p>
-        <details class="inner-form" id="cal-form">
-          <summary>Add an event</summary>
-          <label class="field">What<input id="cal-title" type="text" placeholder="e.g. Dentist — Maddy"></label>
-          <div class="grid2">
-            <label class="field">Date<input id="cal-date" type="date"></label>
-            <label class="field">Time (optional)<input id="cal-time" type="time"></label>
-          </div>
-          <label class="field">Where (optional)<input id="cal-where" type="text"></label>
-          <button id="btn-cal-add" class="primary">Add event</button>
         </details>
-        <div id="cal-list"></div>
+        <p id="cal-conn-msg" class="status" role="status"></p>
       </div>
 
       <h3 id="sec-deliveries">Deliveries</h3>
@@ -565,8 +560,8 @@ shopping: milk, bread, eggs</pre>
         <button id="btn-backup" class="primary">Save encrypted backup</button>
         <button id="btn-restore">Restore from a backup</button>
         <input id="restore-file" type="file" accept="application/json,.json" hidden>
-        <button id="btn-bio-enable" hidden>Enable fingerprint unlock</button>
-        <button id="btn-bio-disable" hidden>Turn off fingerprint unlock</button>
+        <button id="btn-bio-enable" hidden>Turn on fingerprint / Face ID unlock</button>
+        <button id="btn-bio-disable" hidden>Turn off fingerprint / Face ID unlock</button>
         <button id="btn-change-pass">Change passphrase</button>
         <button id="btn-lock2">Lock now</button>
         <p id="security-status" class="status" role="status"></p>
@@ -734,6 +729,9 @@ shopping: milk, bread, eggs</pre>
   </nav>
 
   <div id="update-banner" class="ios-install update-banner" hidden role="status"><span>A new version is ready</span> <button id="btn-update-now">Update now</button></div>
+  <div id="sheet" class="sheet" hidden role="dialog" aria-modal="true">
+    <div class="sheet-panel"><div class="sheet-grip" aria-hidden="true"></div><div id="sheet-body"></div></div>
+  </div>
   <div id="toast" class="toast" hidden></div>
   <div id="photo-viewer" class="photo-viewer" hidden role="dialog" aria-modal="true" aria-label="Photo">
     <div id="photo-viewer-title" class="photo-viewer-title"></div>

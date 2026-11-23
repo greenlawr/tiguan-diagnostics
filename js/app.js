@@ -1249,42 +1249,131 @@ function dayLabel(isoDate) {
   if (diff === 1) return 'Tomorrow';
   return d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short' });
 }
-function renderCalendar() {
-  const out = $('cal-list');
-  if (!out) return;
-  pruneEvents();
-  out.replaceChildren();
-  const rows = upcomingEvents(60);
-  if (!rows.length) { out.append(el('p', { class: 'muted small', text: 'Nothing coming up yet. Tap the morning link, or add an event above.' })); return; }
-  let lastDay = null;
-  let ul = null;
-  for (const e of rows) {
-    if (e.date !== lastDay) { const label = dayLabel(e.date); ul = el('ul', { class: 'list' }); out.append(el('div', { class: 'cal-day' + (label === 'Today' ? ' today' : ''), text: label }), ul); lastDay = e.date; }
-    const when = /^\d/.test((e.time || '').trim()) ? e.time.trim() : 'All day';
-    ul.append(deletableRow(`${when} · ${e.title || 'Event'}`, [e.where, e.who].filter(Boolean).join(' · '), () => { sharedRemove(e.id); renderCalendar(); renderHome(); scheduleSync(); }));
-  }
+// ----- bottom sheet (used for event details, adding events, the fingerprint offer)
+function openSheet(...nodes) {
+  $('sheet-body').replaceChildren(...nodes);
+  $('sheet').hidden = false;
 }
-$('cal-date').value = todayISO();
-$('btn-cal-add').addEventListener('click', () => {
-  const title = $('cal-title').value.trim();
-  if (!title) { $('cal-title').focus(); return toast('Give the event a name.'); }
-  sharedAdd('event', { title, date: $('cal-date').value || todayISO(), time: $('cal-time').value || '', where: $('cal-where').value.trim() });
-  for (const id of ['cal-title', 'cal-time', 'cal-where']) $(id).value = '';
-  renderCalendar(); renderHome(); scheduleSync(); haptic();
-  toast('Event added ✓');
-});
+function closeSheet() { $('sheet').hidden = true; $('sheet-body').replaceChildren(); }
+$('sheet').addEventListener('click', (e) => { if (e.target === $('sheet')) closeSheet(); });
 
-function eventRows(rows) {
-  const ul = el('ul', { class: 'list' });
-  for (const e of rows) {
-    const when = /^\d/.test((e.time || '').trim()) ? e.time.trim() : 'All day';
-    const sub = [e.where, e.who].filter(Boolean).join(' · ');
-    ul.append(el('li', {}, el('div', { class: 'line' },
-      el('div', {}, el('div', { class: 'name', text: e.title || 'Event' }), sub ? el('div', { class: 'sub', text: sub }) : null),
-      el('span', { class: 'tag dim', text: when }))));
-  }
-  return ul;
+// ----- people colours on the calendar
+const ADDED_HERE = '#d98a00';
+function personColour(who) {
+  if (!who) return ADDED_HERE;
+  return who === myName() ? '#1f9a5d' : '#d6457a'; // you green, your partner pink
 }
+const whenText = (e) => (/^\d/.test((e.time || '').trim()) ? e.time.trim() : 'All day');
+function eventCard(e, compact = false) {
+  const card = el('button', { class: 'cal-ev' + (compact ? ' compact' : '') },
+    el('div', { class: 'cal-ev-when', text: whenText(e) + (e.who ? ` · ${e.who}` : '') }),
+    el('div', { class: 'cal-ev-title', text: e.title || 'Event' }),
+    e.where ? el('div', { class: 'cal-ev-where', text: e.where }) : null);
+  card.style.setProperty('--c', personColour(e.who));
+  card.addEventListener('click', () => showEvent(e));
+  return card;
+}
+function eventCards(rows, compact) { const box = el('div', { class: 'cal-evs' }); for (const e of rows) box.append(eventCard(e, compact)); return box; }
+function showEvent(e) {
+  const d = new Date(e.date + 'T00:00:00');
+  const tag = el('div', { class: 'sheet-tag', text: e.who ? `${e.who}'s calendar` : 'Added in Evergreen' });
+  tag.style.setProperty('--c', personColour(e.who));
+  const nodes = [tag, el('h2', { text: e.title || 'Event' }),
+    el('p', { class: 'muted', text: `${d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })} · ${whenText(e)}` })];
+  if (e.where) nodes.push(el('p', { text: '📍 ' + e.where }));
+  const row = el('div', { class: 'row' });
+  if (e.src) {
+    nodes.push(el('p', { class: 'muted small', text: `This comes from ${e.who ? e.who + "'s" : 'a connected'} Google Calendar — change or delete it there and it updates here.` }));
+  } else {
+    const del = el('button', { text: 'Delete event' });
+    del.addEventListener('click', () => { sharedRemove(e.id); scheduleSync(); renderCalendar(); renderHome(); closeSheet(); toast('Event deleted'); });
+    row.append(del);
+  }
+  const close = el('button', { class: 'primary', text: 'Close' });
+  close.addEventListener('click', closeSheet);
+  row.append(close);
+  openSheet(...nodes, row);
+}
+function openAddEvent(dateISO) {
+  const title = el('input', { type: 'text', placeholder: 'e.g. Dentist — Maddy' });
+  const date = el('input', { type: 'date' }); date.value = dateISO || todayISO();
+  const time = el('input', { type: 'time' });
+  const where = el('input', { type: 'text', placeholder: 'optional' });
+  const add = el('button', { class: 'primary', text: 'Add' });
+  add.addEventListener('click', () => {
+    if (!title.value.trim()) { title.focus(); return toast('Give the event a name.'); }
+    sharedAdd('event', { title: title.value.trim(), date: date.value || todayISO(), time: time.value || '', where: where.value.trim() });
+    scheduleSync(); renderCalendar(); renderHome(); closeSheet(); haptic();
+    toast('Event added ✓');
+  });
+  const cancel = el('button', { text: 'Cancel' });
+  cancel.addEventListener('click', closeSheet);
+  openSheet(el('h2', { text: 'Add to the family calendar' }),
+    el('label', { class: 'field' }, 'What', title),
+    el('div', { class: 'grid2' }, el('label', { class: 'field' }, 'Date', date), el('label', { class: 'field' }, 'Time (optional)', time)),
+    el('label', { class: 'field' }, 'Where (optional)', where),
+    el('div', { class: 'row' }, cancel, add));
+  setTimeout(() => title.focus(), 60);
+}
+$('btn-cal-new').addEventListener('click', () => openAddEvent(calSelected));
+
+function isoPlus(iso, n) { const d = new Date(iso + 'T00:00:00'); d.setDate(d.getDate() + n); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10); }
+let calDays = 14;
+let calSelected = null;
+function renderCalendar() {
+  const list = $('cal-list');
+  if (!list) return;
+  pruneEvents();
+  const today = todayISO();
+  const all = upcomingEvents(CAL_DAYS);
+  // Legend: whose events are on the calendar (you first, "Added here" last)
+  const people = [...new Set(all.map((e) => e.who || ''))].sort((x, y) => (x === myName() ? -1 : y === myName() ? 1 : !x ? 1 : !y ? -1 : x.localeCompare(y)));
+  $('cal-legend').replaceChildren(...people.map((p) => { const k = el('span', { class: 'cal-key', text: p || 'Added here' }); k.style.setProperty('--c', personColour(p)); return k; }));
+  // Day strip: the next 14 days, with a dot for each person who has something on
+  const strip = $('cal-strip');
+  strip.replaceChildren();
+  const months = new Set();
+  for (let i = 0; i < 14; i++) {
+    const iso = isoPlus(today, i);
+    const d = new Date(iso + 'T00:00:00');
+    months.add(d.toLocaleDateString('en-GB', { month: 'long' }));
+    const colours = [...new Set(all.filter((e) => e.date === iso).map((e) => personColour(e.who)))].slice(0, 3);
+    const dots = el('span', { class: 'cal-dots' }, ...colours.map((c) => { const dot = el('i'); dot.style.background = c; return dot; }));
+    const pill = el('button', { class: 'cal-pill' + (iso === today ? ' today' : '') + (iso === calSelected ? ' sel' : ''), 'aria-label': dayLabel(iso) },
+      el('span', { class: 'cal-dow', text: d.toLocaleDateString('en-GB', { weekday: 'short' }) }),
+      el('span', { class: 'cal-num', text: String(d.getDate()) }), dots);
+    pill.addEventListener('click', () => {
+      calSelected = iso;
+      for (const p of strip.children) p.classList.toggle('sel', p === pill);
+      const block = document.getElementById('cal-d-' + iso);
+      if (block) block.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      else toast(`Nothing on ${dayLabel(iso)} — tap + Add to add something`);
+    });
+    strip.append(pill);
+  }
+  $('cal-month').textContent = [...months].join(' – ');
+  // Agenda, grouped by day
+  list.replaceChildren();
+  if (!all.length) {
+    list.append(el('div', { class: 'cal-empty' }, el('div', { class: 'cal-empty-icon', text: '📅' }),
+      el('p', { text: settings().icsUrl ? 'Nothing coming up in the next two months.' : 'Nothing here yet — connect your Google Calendar, or tap + Add.' })));
+  }
+  const rows = all.filter((e) => e.date < isoPlus(today, calDays));
+  for (const iso of [...new Set(rows.map((e) => e.date))]) {
+    const d = new Date(iso + 'T00:00:00');
+    const label = dayLabel(iso);
+    const dateBox = el('div', { class: 'cal-date' + (iso === today ? ' today' : '') },
+      el('span', { class: 'cal-dow', text: label === 'Today' ? 'Today' : d.toLocaleDateString('en-GB', { weekday: 'short' }) }),
+      el('span', { class: 'cal-num', text: String(d.getDate()) }),
+      el('span', { class: 'cal-mon', text: d.toLocaleDateString('en-GB', { month: 'short' }) }));
+    list.append(el('div', { class: 'cal-dayblock', id: 'cal-d-' + iso }, dateBox, eventCards(rows.filter((e) => e.date === iso))));
+  }
+  const more = all.length - rows.length;
+  $('btn-cal-more').hidden = !more;
+  $('btn-cal-more').textContent = `Show ${more} more ▾`;
+}
+$('btn-cal-more').addEventListener('click', () => { calDays = Math.min(CAL_DAYS, calDays + 14); renderCalendar(); });
+
 const WEEK_OPEN_KEY = 'evergreen-week-open';
 function renderToday(out) {
   pruneEvents();
@@ -1294,7 +1383,7 @@ function renderToday(out) {
   const card = el('div', { class: 'card today-card' },
     el('div', { class: 'today-head' }, el('h2', { text: 'Today' }),
       el('span', { class: 'muted small', text: new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' }) })));
-  if (todays.length) card.append(eventRows(todays));
+  if (todays.length) card.append(eventCards(todays, true));
   else card.append(el('p', { class: 'muted', style: 'margin:4px 0 0', text: 'Nothing in the calendar today.' }));
   if (week.length) {
     let open = false;
@@ -1302,7 +1391,7 @@ function renderToday(out) {
     const more = el('div', {});
     let lastDay = null;
     for (const e of week) {
-      if (e.date !== lastDay) { more.append(el('div', { class: 'cal-day', text: dayLabel(e.date) }), eventRows(week.filter((x) => x.date === e.date))); lastDay = e.date; }
+      if (e.date !== lastDay) { more.append(el('div', { class: 'cal-day', text: dayLabel(e.date) }), eventCards(week.filter((x) => x.date === e.date), true)); lastDay = e.date; }
     }
     more.hidden = !open;
     const btn = el('button', { class: 'link today-toggle' });
@@ -2420,7 +2509,8 @@ async function onUnlockSubmit(e) {
     $('lock-submit').disabled = false;
   }
   $('lock-screen').hidden = true;
-  initAll();
+  await initAll();
+  offerBiometric(pass);
 }
 
 function lockApp() {
@@ -2480,6 +2570,39 @@ $('restore-file').addEventListener('change', async (e) => {
     e.target.value = '';
   }
 });
+// Offer fingerprint / Face ID unlock right after unlocking with the passphrase
+// (so it's found without digging through Help). Asks once per unlock until
+// it's on, or until "Don't ask again".
+const BIO_OFFER_KEY = 'evergreen-bio-offer';
+async function offerBiometric(pass) {
+  try { if (localStorage.getItem(BIO_OFFER_KEY) === 'no') return; } catch { return; }
+  if (biometricConfigured() || !(await biometricAvailable())) return;
+  const msg = el('p', { class: 'status', role: 'status' });
+  const yes = el('button', { class: 'primary', text: 'Turn it on' });
+  const later = el('button', { text: 'Not now' });
+  const never = el('button', { class: 'link', text: "Don't ask again" });
+  yes.addEventListener('click', async () => {
+    yes.disabled = true;
+    msg.classList.remove('error');
+    msg.textContent = "Follow your phone's prompt…";
+    try {
+      await enableBiometric(pass);
+      closeSheet();
+      refreshBiometricButtons();
+      haptic();
+      toast('Fingerprint / Face ID unlock is on ✓');
+    } catch (e) {
+      yes.disabled = false;
+      msg.textContent = e.message || "That didn't work — you can try again from Help → Security & backup.";
+      msg.classList.add('error');
+    }
+  });
+  later.addEventListener('click', closeSheet);
+  never.addEventListener('click', () => { try { localStorage.setItem(BIO_OFFER_KEY, 'no'); } catch { /* ignore */ } closeSheet(); });
+  openSheet(el('div', { class: 'sheet-icon', text: '👆' }), el('h2', { text: 'Unlock with your fingerprint?' }),
+    el('p', { class: 'muted', text: 'Next time, open Evergreen with your fingerprint or Face ID instead of typing your passphrase. Your passphrase still works too, and you can turn this off any time in Help → Security & backup.' }),
+    msg, el('div', { class: 'row' }, later, yes), never);
+}
 async function refreshBiometricButtons() {
   const configured = biometricConfigured();
   const available = await biometricAvailable();
@@ -2634,11 +2757,12 @@ function refreshCalConnectUI() {
   const on = Boolean(s.icsUrl);
   $('cal-conn-off').hidden = on;
   $('cal-conn-on').hidden = !on;
+  if (on) $('cal-card').after($('cal-connect')); else $('cal-card').before($('cal-connect'));
   if (!on) return;
   if ($('cal-hide') !== document.activeElement) $('cal-hide').value = s.calHide || '';
   $('cal-conn-status').textContent = s.calError
     ? `— couldn't update: ${s.calError}`
-    : s.calLast ? `· ${s.calCount} event${s.calCount === 1 ? '' : 's'} in the next ${CAL_DAYS} days · updated ${new Date(s.calLast).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : '';
+    : s.calLast ? `· connected ✓ · updated ${new Date(s.calLast).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : '· connected ✓';
 }
 $('btn-cal-connect').addEventListener('click', async () => {
   const link = $('cal-ics').value.trim().replace(/^webcal:/i, 'https:');
@@ -2680,7 +2804,7 @@ $('cal-hide').addEventListener('input', (e) => persistCalHide(e.target.value));
 
 // ---------- app updates ----------
 // Must match CACHE in sw.js (a test checks this).
-const APP_VERSION = 'evergreen-v41';
+const APP_VERSION = 'evergreen-v42';
 let updateReady = false;
 async function checkForUpdate(manual = false) {
   try {
