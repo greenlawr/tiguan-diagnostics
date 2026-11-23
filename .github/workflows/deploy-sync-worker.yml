@@ -17,7 +17,7 @@ jobs:
       - name: Waiting for the Cloudflare token
         if: env.CF_TOKEN == ''
         run: echo "CLOUDFLARE_API_TOKEN isn't set yet - skipping deploy."
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         if: env.CF_TOKEN != ''
       - name: Deploy to Cloudflare
         if: env.CF_TOKEN != ''
