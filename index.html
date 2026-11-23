@@ -7,6 +7,11 @@
   <title>Evergreen</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Evergreen">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -24,6 +29,11 @@
       <button id="btn-biometric" class="big" type="button" hidden>Unlock with fingerprint</button>
       <button id="lock-reset" class="link" type="button" hidden>Forgotten your passphrase?</button>
     </div>
+  </div>
+
+  <div id="ios-install" class="ios-install" hidden>
+    To install Evergreen: tap the Share button <span aria-hidden="true">⬆️</span> below, then <strong>Add to Home Screen</strong>.
+    <button id="ios-install-close" aria-label="Dismiss">✕</button>
   </div>
 
   <header class="top">

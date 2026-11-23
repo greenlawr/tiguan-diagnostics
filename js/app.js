@@ -2054,6 +2054,34 @@ try {
 } catch {
   applyTextSize('normal');
 }
+// iOS: request durable storage and show an install hint (Safari can't prompt).
+(function iosSetup() {
+  try {
+    navigator.storage?.persist?.();
+  } catch {
+    /* ignore */
+  }
+  const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const standalone = navigator.standalone || matchMedia('(display-mode: standalone)').matches;
+  let dismissed = false;
+  try {
+    dismissed = localStorage.getItem('evergreen-ios-hint') === '1';
+  } catch {
+    /* ignore */
+  }
+  if (isIOS && !standalone && !dismissed) {
+    $('ios-install').hidden = false;
+    $('ios-install-close').addEventListener('click', () => {
+      $('ios-install').hidden = true;
+      try {
+        localStorage.setItem('evergreen-ios-hint', '1');
+      } catch {
+        /* ignore */
+      }
+    });
+  }
+})();
+
 initLifeNav();
 showLockScreen();
 if ('serviceWorker' in navigator && location.protocol === 'https:') {
