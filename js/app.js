@@ -14,7 +14,7 @@ import { fuelStats, renewals, countdown, upcomingReminders, parkMapsUrl, timeAgo
 import { Vault } from './vault.js';
 import { CARRIER_NAMES, trackingUrl, parcelStatus, parseShared } from './deliveries.js';
 import { biometricAvailable, biometricConfigured, enableBiometric, unlockBiometric, disableBiometric } from './biometric.js';
-import { generateHouseholdCode, normalizeCode, householdId } from './household.js';
+import { generateHouseholdCode, normalizeCode, householdId, writeToken } from './household.js';
 import { parseICS, expandEvents } from './ical.js';
 import { makeVerifier, checkVerifier } from './lost.js';
 import { syncShared } from './sync.js';
@@ -928,7 +928,7 @@ $('btn-fuel-add').addEventListener('click', () => {
     alert('Please enter at least the mileage and litres.');
     return;
   }
-  const entry = { id: Date.now(), date: $('fuel-date').value || new Date().toISOString().slice(0, 10), odo, litres, cost: num('fuel-cost'), full: $('fuel-full').checked };
+  const entry = { id: Date.now(), date: $('fuel-date').value || todayISO(), odo, litres, cost: num('fuel-cost'), full: $('fuel-full').checked };
   store.save(FUEL_KEY, [entry, ...store.load(FUEL_KEY, [])]);
   for (const id of ['fuel-odo', 'fuel-litres', 'fuel-cost']) $(id).value = '';
   renderFuel();
@@ -953,7 +953,7 @@ $('btn-svc-add').addEventListener('click', () => {
     alert('Please say what was done.');
     return;
   }
-  const entry = { id: Date.now(), date: $('svc-date').value || new Date().toISOString().slice(0, 10), odo: num('svc-odo'), what, cost: num('svc-cost') };
+  const entry = { id: Date.now(), date: $('svc-date').value || todayISO(), odo: num('svc-odo'), what, cost: num('svc-cost') };
   store.save(SERVICE_KEY, [entry, ...store.load(SERVICE_KEY, [])]);
   for (const id of ['svc-odo', 'svc-what', 'svc-cost']) $(id).value = '';
   renderService();
@@ -964,7 +964,7 @@ function renderMileage() {
   const trips = store.load(MILEAGE_KEY, []);
   const m = mileageSummary(trips);
   $('mileage-summary').replaceChildren(
-    el('div', { class: 'tile' }, el('div', { class: 'label', text: 'Business miles' }), el('div', { class: 'value' }, el('span', { text: Math.round(m.businessMiles).toLocaleString() }))),
+    el('div', { class: 'tile' }, el('div', { class: 'label', text: 'Business miles (this tax year)' }), el('div', { class: 'value' }, el('span', { text: Math.round(m.businessMiles).toLocaleString() }))),
     el('div', { class: 'tile' }, el('div', { class: 'label', text: 'Reclaim estimate' }), el('div', { class: 'value' }, el('span', { text: '£' + m.reclaim.toFixed(0) })))
   );
   $('btn-mile-export').hidden = trips.length === 0;
@@ -984,7 +984,7 @@ $('btn-mile-add').addEventListener('click', () => {
     alert('Please enter the miles.');
     return;
   }
-  const entry = { id: Date.now(), date: $('mile-date').value || new Date().toISOString().slice(0, 10), miles, purpose: $('mile-purpose').value.trim(), business: $('mile-business').checked };
+  const entry = { id: Date.now(), date: $('mile-date').value || todayISO(), miles, purpose: $('mile-purpose').value.trim(), business: $('mile-business').checked };
   store.save(MILEAGE_KEY, [entry, ...store.load(MILEAGE_KEY, [])]);
   $('mile-miles').value = '';
   $('mile-purpose').value = '';
@@ -1033,7 +1033,9 @@ function loadTesseract() {
   tesseractPromise = new Promise((resolve, reject) => {
     if (window.Tesseract) return resolve(window.Tesseract);
     const s = document.createElement('script');
-    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/5.1.1/tesseract.min.js';
+    // Served from Evergreen's own site with its fingerprint pinned, so a changed copy is refused.
+    s.src = 'js/vendor/tesseract-5.1.1.min.js';
+    s.integrity = 'sha384-GJqSu7vueQ9qN0E9yLPb3Wtpd7OrgK8KmYzC8T1IysG1bcvxvIO4qtYR/D3A991F';
     s.onload = () => resolve(window.Tesseract);
     s.onerror = () => { tesseractPromise = null; reject(new Error('Could not load the scanner (it needs internet the first time).')); };
     document.head.appendChild(s);
@@ -1187,7 +1189,7 @@ const HOME_TILES = [
   { icon: '✅', label: 'To-do list', go: () => goLife('tasks'), badge: () => { const n = sharedItems('task').filter((i) => !i.done).length; return n ? { text: String(n), cls: 'minor' } : null; } },
   { icon: '📦', label: 'Deliveries', go: () => goLife('deliveries'), badge: () => { const n = sharedItems('delivery').filter((d) => !d.done).length; return n ? { text: String(n), cls: 'minor' } : null; } },
   { icon: '📄', label: 'Documents', go: () => goLife('documents'), badge: () => { const soon = store.load(DOCS_KEY, []).filter((d) => d.expiry && countdown(d.expiry, '').days <= 30).length; return soon ? { text: String(soon), cls: 'soon' } : null; } },
-  { icon: '⚡', label: 'Utilities', go: () => goLife('utilities'), badge: () => { const soon = utilities().filter((u) => u.renewal && countdown(u.renewal, '').days <= 30).length; return soon ? { text: String(soon), cls: 'soon' } : null; } },
+  { icon: '⚡', label: 'Utilities', go: () => goLife('utilities'), badge: () => { const soon = utilities().filter((u) => { const cd = u.renewal && countdown(u.renewal, ''); return cd && cd.days >= 0 && cd.days <= 30; }).length; return soon ? { text: String(soon), cls: 'soon' } : null; } },
   { icon: '💷', label: 'Money & tax', go: () => goLife('tax') },
   { icon: '🏠', label: 'Home', go: () => goLife('home') },
   { icon: '❤️', label: 'Health', go: () => goLife('health') },
@@ -1461,7 +1463,7 @@ function renderDashboard() {
   const dueUtils = utilities().filter((u) => {
     if (!u.renewal) return false;
     const cd = countdown(u.renewal, u.type);
-    return cd && cd.days <= 30;
+    return cd && cd.days >= 0 && cd.days <= 30;
   });
   if (dueUtils.length) {
     const card = el('div', { class: 'card change' }, el('h2', { text: 'Time to compare' }),
@@ -1935,11 +1937,29 @@ function initEmergency() {
 }
 
 // Extra dashboard reminders from the new sections
+// Subscriptions renew automatically, so a renewal date in the past means "the next one".
+function nextRenewal(sub) {
+  if (!sub.renewal) return '';
+  let d = sub.renewal;
+  const today = todayISO();
+  for (let i = 0; d < today && i < 600; i++) {
+    const [y, m, day] = d.split('-').map(Number);
+    if (sub.cycle === 'weekly') d = isoPlus(d, 7);
+    else {
+      const add = sub.cycle === 'yearly' ? 12 : 1;
+      const total = y * 12 + (m - 1) + add;
+      const ny = Math.floor(total / 12), nm = (total % 12) + 1;
+      const dim = new Date(Date.UTC(ny, nm, 0)).getUTCDate();
+      d = `${ny}-${String(nm).padStart(2, '0')}-${String(Math.min(day, dim)).padStart(2, '0')}`;
+    }
+  }
+  return d;
+}
 function collectExtraReminders() {
   const items = [];
   const add = (date, label, sub) => { const cd = date ? countdown(date, label) : null; if (cd) items.push({ label, sub, days: cd.days, level: cd.level, text: cd.text }); };
   for (const u of utilities()) add(u.renewal, u.type + (u.provider ? ' (' + u.provider + ')' : ''), 'Utilities');
-  for (const s of store.load(SUBS_KEY, [])) add(s.renewal, s.name, 'Subscription');
+  for (const s of store.load(SUBS_KEY, [])) add(nextRenewal(s), s.name, 'Subscription');
   for (const m of store.load(MAINT_KEY, [])) add(m.date, m.task, 'Home');
   for (const c of store.load(CHECK_KEY, [])) add(nextDue(c.last, c.interval), c.type, 'Health');
   for (const d of taxDeadlines()) add(d.date, d.label, 'Tax');
@@ -2046,6 +2066,7 @@ $('btn-pair-create').addEventListener('click', () => {
   $('pair-code-box').hidden = false;
   setStatus('pair-status', 'Created. Share the code with your partner, then tap below once done.');
   refreshPairUI();
+  updateLostCheck();
   syncNow();
 });
 $('btn-pair-join').addEventListener('click', () => {
@@ -2060,6 +2081,7 @@ $('btn-pair-join').addEventListener('click', () => {
   saveSettings({ householdCode: grouped });
   refreshPairUI();
   setStatus('pair-status', '');
+  updateLostCheck();
   syncNow();
 });
 $('btn-pair-leave').addEventListener('click', () => {
@@ -2087,6 +2109,7 @@ function scheduleSync() {
   syncTimer = setTimeout(syncNow, 1200);
 }
 // Calls made while a sync is running share it (so callers can await it).
+const TOMBSTONE_DAYS = 60;
 let syncPromise = null;
 function syncNow() {
   if (!paired()) return Promise.resolve();
@@ -2095,10 +2118,19 @@ function syncNow() {
     setStatus('sync-status', 'Syncing…');
     try {
       const s = settings();
-      const merged = await syncShared(s.syncUrl, s.householdCode, store.load(SHARED_KEY, {}));
-      // Keep anything changed on this phone while the request was in flight.
+      // Deleted-item markers older than 60 days have done their job; drop them so
+      // the shared space doesn't fill up (the server drops them too).
+      const cutoff = now() - TOMBSTONE_DAYS * 86400000;
+      const local = store.load(SHARED_KEY, {});
+      for (const [id, it] of Object.entries(local)) if (it.deleted && (it.updatedAt || 0) < cutoff) delete local[id];
+      store.save(SHARED_KEY, local);
+      const sent = Object.fromEntries(Object.entries(local).map(([id, it]) => [id, it.updatedAt]));
+      const merged = await syncShared(s.syncUrl, s.householdCode, local);
+      // Keep only things changed on this phone while the request was in flight —
+      // otherwise the server's answer wins (so it can't loop resending the same thing).
       let localNewer = false;
       for (const [id, it] of Object.entries(store.load(SHARED_KEY, {}))) {
+        if (sent[id] === it.updatedAt) continue;
         const m = merged[id];
         if (!m || (it.updatedAt || 0) > (m.updatedAt || 0)) { merged[id] = it; localNewer = true; }
       }
@@ -2108,8 +2140,14 @@ function syncNow() {
       setStatus('sync-status', 'Synced ' + new Date().toLocaleTimeString());
       updateLostCheck();
     } catch (e) {
-      setStatus('sync-status', 'Could not sync (offline, or check the server address).', true);
-      if (/410/.test(e.message)) checkLostStatus(true);
+      if (/410/.test(e.message)) {
+        setStatus('sync-status', 'This shared space was closed (a phone was reported lost). Ask your partner for the new code and join again.', true);
+        checkLostStatus(true);
+      } else if (/413/.test(e.message)) {
+        setStatus('sync-status', 'Your shared space is full — remove some shopping-list photos or old items, then sync again.', true);
+      } else {
+        setStatus('sync-status', 'Could not sync (offline, or check the server address).', true);
+      }
       log('info', 'Sync failed: ' + e.message);
     }
   })().finally(() => { syncPromise = null; });
@@ -2119,14 +2157,15 @@ function syncNow() {
 // The same parcel or event can be added on both phones (e.g. both tap the
 // morning link while offline). Keep the one with the lowest id — both phones
 // pick the same one — and remove the rest.
-const deliveryKey = (d) => (d.tracking || '').trim().toLowerCase() || (d.item || '').trim().toLowerCase() + '|' + (d.expected || '');
-const eventKey = (e) => (e.date || '') + '|' + (e.title || '').trim().toLowerCase();
+const deliveryKey = (d) => (d.tracking || '').trim().toLowerCase(); // no tracking number = never treated as a duplicate
+const eventKey = (e) => (e.date || '') + '|' + (e.time || '').trim() + '|' + (e.title || '').trim().toLowerCase();
 function dedupeShared() {
   let removed = 0;
   for (const [type, keyFn] of [['delivery', deliveryKey], ['event', eventKey]]) {
     const seen = new Set();
     for (const it of sharedItems(type).sort((a, b) => (a.id < b.id ? -1 : 1))) {
       const k = keyFn(it);
+      if (!k) continue;
       if (seen.has(k)) { sharedRemove(it.id); removed++; } else seen.add(k);
     }
   }
@@ -2134,12 +2173,28 @@ function dedupeShared() {
 }
 
 // Shared space helpers (all shared types live in SHARED_KEY, tagged by `type`).
-function sharedSet(item) { const all = store.load(SHARED_KEY, {}); all[item.id] = item; store.save(SHARED_KEY, all); }
-function sharedUpdate(id, patch) { const all = store.load(SHARED_KEY, {}); if (all[id]) { all[id] = { ...all[id], ...patch, updatedAt: now() }; store.save(SHARED_KEY, all); } }
+// Every change is stamped later than the version it replaces, even if this phone's
+// clock is behind the other phone's (last-write-wins would otherwise drop it).
+const stamp = (prev) => Math.max(now(), ((prev && prev.updatedAt) || 0) + 1);
+function sharedSet(item) {
+  const all = store.load(SHARED_KEY, {});
+  const prev = all[item.id];
+  all[item.id] = prev && (item.updatedAt || 0) <= (prev.updatedAt || 0) ? { ...item, updatedAt: stamp(prev) } : item;
+  store.save(SHARED_KEY, all);
+}
+// A deleted item keeps only a tiny marker, plus (for parcels and events) a short
+// fingerprint so the same thing can't be added back by tapping an old link.
+function tombstone(prev) {
+  const t = { id: prev.id, type: prev.type, deleted: true, updatedAt: stamp(prev) };
+  const key = prev.type === 'delivery' ? deliveryKey(prev) : prev.type === 'event' ? eventKey(prev) : '';
+  if (key) t.k = fnv(key);
+  return t;
+}
+function sharedUpdate(id, patch) { const all = store.load(SHARED_KEY, {}); if (all[id]) { all[id] = { ...all[id], ...patch, updatedAt: stamp(all[id]) }; store.save(SHARED_KEY, all); } }
 const sharedItems = (type) => Object.values(store.load(SHARED_KEY, {})).filter((i) => !i.deleted && (i.type || 'shop') === type);
 function sharedAdd(type, data) { const id = type.charAt(0) + uid(); sharedSet({ ...data, id, type, updatedAt: now(), deleted: false }); return id; }
 // Deleting keeps only a tiny marker, so the removal syncs without keeping the content around.
-function sharedRemove(id) { const all = store.load(SHARED_KEY, {}); if (!all[id]) return; all[id] = { id, type: all[id].type, deleted: true, updatedAt: now() }; store.save(SHARED_KEY, all); }
+function sharedRemove(id) { const all = store.load(SHARED_KEY, {}); if (!all[id]) return; all[id] = tombstone(all[id]); store.save(SHARED_KEY, all); }
 const myName = () => (settings().myName || '').trim() || 'Me';
 const partnerName = () => (settings().partnerName || '').trim() || 'Partner';
 function peopleOptions(sel, includeAnyone) {
@@ -2180,8 +2235,12 @@ $('btn-bill-add').addEventListener('click', () => {
   const name = $('bill-name').value.trim();
   const amount = parseFloat($('bill-amount').value) || 0;
   if (!name || !amount) return alert('Add a name and amount.');
+  if (!(settings().myName || '').trim() || !(settings().partnerName || '').trim()) {
+    $('my-name').focus();
+    return toast('Add your name and your partner\'s name first, so both phones agree who paid.');
+  }
   const id = 'b' + now() + Math.random().toString(36).slice(2, 6);
-  sharedSet({ id, type: 'bill', name, amount, paidBy: $('bill-paidby').value, split: $('bill-split').checked, date: $('bill-date').value || new Date().toISOString().slice(0, 10), settled: false, updatedAt: now(), deleted: false });
+  sharedSet({ id, type: 'bill', name, amount, paidBy: $('bill-paidby').value, split: $('bill-split').checked, date: $('bill-date').value || todayISO(), settled: false, updatedAt: now(), deleted: false });
   for (const i of ['bill-name', 'bill-amount', 'bill-date']) $(i).value = '';
   renderBills(); scheduleSync(); toast('Bill added ✓');
 });
@@ -2234,12 +2293,12 @@ function renderShared() {
   for (const it of visible) {
     const box = el('input', { type: 'checkbox' });
     box.checked = !!it.done;
-    box.addEventListener('change', () => { const all = store.load(SHARED_KEY, {}); all[it.id] = { ...all[it.id], done: box.checked, updatedAt: now() }; store.save(SHARED_KEY, all); renderShared(); scheduleSync(); });
+    box.addEventListener('change', () => { const all = store.load(SHARED_KEY, {}); all[it.id] = { ...all[it.id], done: box.checked, updatedAt: stamp(all[it.id]) }; store.save(SHARED_KEY, all); renderShared(); scheduleSync(); });
     const label = el('span', { class: 'name', text: it.text });
     if (it.done) label.style.textDecoration = 'line-through';
     const del = el('button', { class: 'del', text: '✕', 'aria-label': 'Remove ' + it.text });
     // Deleting drops the photo too, so removed items don't keep using shared space.
-    del.addEventListener('click', () => { const all = store.load(SHARED_KEY, {}); const { photo, ...rest } = all[it.id]; all[it.id] = { ...rest, deleted: true, updatedAt: now() }; store.save(SHARED_KEY, all); renderShared(); scheduleSync(); });
+    del.addEventListener('click', () => { sharedRemove(it.id); renderShared(); scheduleSync(); });
     const row = el('li', { class: 'shop-row' }, el('label', { class: 'check', style: 'margin:0;flex:1;min-width:0' }, box, label));
     if (it.photo) {
       const thumb = el('img', { class: 'shop-thumb', src: it.photo, alt: 'Photo of ' + it.text });
@@ -2258,12 +2317,12 @@ function renderShared() {
 // Small thumbnails, stored inside the (encrypted) shared item so they sync to
 // your partner. Kept under a budget so the shared space stays well within the
 // sync server's limit.
-const SHARED_PHOTO_BUDGET = 1_300_000; // characters of local JSON (~1.3 MB)
+const SHARED_PHOTO_BUDGET = 900_000; // characters of local JSON; ~1.2 MB once encrypted, well under the server's 2 MB
 function setShopPhoto(id, dataUrl) {
   const all = store.load(SHARED_KEY, {});
   if (!all[id]) return;
   const { photo, ...rest } = all[id];
-  all[id] = dataUrl ? { ...rest, photo: dataUrl, updatedAt: now() } : { ...rest, updatedAt: now() };
+  all[id] = dataUrl ? { ...rest, photo: dataUrl, updatedAt: stamp(all[id]) } : { ...rest, updatedAt: stamp(all[id]) };
   store.save(SHARED_KEY, all);
   renderShared();
   scheduleSync();
@@ -2304,7 +2363,7 @@ function openPhotoViewer(src, title, onRemove) {
 
 $('btn-shared-clear').addEventListener('click', () => {
   const all = store.load(SHARED_KEY, {});
-  for (const it of Object.values(all)) if (it.done && !it.deleted) { const { photo, ...rest } = it; all[it.id] = { ...rest, deleted: true, updatedAt: now() }; }
+  for (const it of Object.values(all)) if (it.done && !it.deleted && (it.type || 'shop') === 'shop') all[it.id] = tombstone(it);
   store.save(SHARED_KEY, all);
   renderShared();
   scheduleSync();
@@ -2358,7 +2417,7 @@ $('btn-import-preview').addEventListener('click', () => {
   const c = importParsed;
   const label = (arr, name) => arr.length && bits.push(`${arr.length} ${name}`);
   label(c.subscriptions, 'subscription(s)'); label(c.utilities, 'utility plan(s)'); label(c.documents, 'document(s)');
-  label(c.deliveries, 'delivery/deliveries'); label(c.loyalty, 'loyalty card(s)'); label(c.checkups, 'check-up(s)');
+  label(c.deliveries, 'delivery/deliveries'); label(c.events, 'event(s)'); label(c.loyalty, 'loyalty card(s)'); label(c.checkups, 'check-up(s)');
   label(c.maintenance, 'maintenance item(s)'); label(c.shopping, 'shopping item(s)');
   if (Object.keys(c.vehicle).length) bits.push('car details');
   setStatus('import-status', `Ready to add: ${bits.join(', ') || 'nothing'}.${errs ? ` ${errs} line(s) not understood will be skipped.` : ''}`);
@@ -2377,16 +2436,23 @@ function applyParsedImport(r) {
   // on both phones never creates duplicates.
   const addedShared = [];
   const addUnique = (type, rows, keyFn, extra = {}) => {
-    const seen = new Set(sharedItems(type).map(keyFn));
-    for (const row of rows) { const k = keyFn(row); if (seen.has(k)) continue; seen.add(k); addedShared.push(sharedAdd(type, { ...extra, ...row })); }
+    const all = Object.values(store.load(SHARED_KEY, {})).filter((i) => (i.type || 'shop') === type);
+    const seen = new Set(all.filter((i) => !i.deleted).map(keyFn));
+    const gone = new Set(all.filter((i) => i.deleted && i.k).map((i) => i.k));
+    for (const row of rows) {
+      const k = keyFn({ ...extra, ...row });
+      if (k && (seen.has(k) || gone.has(fnv(k)))) continue;
+      if (k) seen.add(k);
+      addedShared.push(sharedAdd(type, { ...extra, ...row }));
+    }
   };
   addUnique('delivery', r.deliveries, deliveryKey, { done: false });
   addUnique('event', r.events, eventKey);
-  for (const { type, ...u } of r.utilities) addedShared.push(sharedAdd('utility', { ...u, service: type }));
+  addUnique('utility', r.utilities.map(({ type, ...u }) => ({ ...u, service: type })), (u) => `${(u.service || '').toLowerCase()}|${(u.provider || '').trim().toLowerCase()}`);
   add(LOYAL_KEY, r.loyalty, (c) => ({ id: uid(), ...c }));
   add(CHECK_KEY, r.checkups, (c) => ({ id: uid(), ...c }));
   add(MAINT_KEY, r.maintenance, (m) => ({ id: uid(), ...m }));
-  for (const text of r.shopping) addedShared.push(sharedAdd('shop', { text, done: false }));
+  addUnique('shop', r.shopping.map((text) => ({ text })), (i) => (i.done ? '' : (i.text || '').trim().toLowerCase()), { done: false });
   if (addedShared.length) scheduleSync();
   let vehicleSnap = null;
   if (Object.keys(r.vehicle).length) {
@@ -2405,7 +2471,9 @@ function applyParsedImport(r) {
     if (addedShared.length) scheduleSync();
     rerender();
   };
-  return { count: importCount(r), undo };
+  // Count what was actually added (things already there, or deleted before, are skipped).
+  const localAdded = r.subscriptions.length + r.documents.length + r.loyalty.length + r.checkups.length + r.maintenance.length + Object.keys(r.vehicle).length;
+  return { count: localAdded + addedShared.length, undo };
 }
 
 $('btn-import-apply').addEventListener('click', () => {
@@ -2487,7 +2555,7 @@ function showLockScreen() {
   $('lock-pass2').hidden = !setupMode;
   $('lock-reset').hidden = setupMode;
  const wiped = new URLSearchParams(location.search).get('wiped');
-  $('lock-intro').textContent = wiped && setupMode
+  $('lock-intro').textContent = wiped && wiped !== 'reset' && setupMode
     ? (wiped === 'tries'
       ? `Evergreen was erased on this phone after ${MAX_TRIES} wrong passphrase attempts. Set a new passphrase, restore your backup (Help → Security & backup), and rejoin your shared space with your partner's code.`
       : 'Evergreen was erased on this phone because it was reported lost. If it is yours and you have it back, set a passphrase, then rejoin your shared space with the new code from your partner.')
@@ -2525,7 +2593,7 @@ async function onUnlockSubmit(e) {
   const err = $('lock-error');
   err.textContent = '';
   if (setupMode) {
-    if (pass.length < 6) return (err.textContent = 'Use at least 6 characters.');
+    if (pass.length < 8) return (err.textContent = 'Use at least 8 characters — a few words is easiest to remember.');
     if (pass !== $('lock-pass2').value) return (err.textContent = 'The two passphrases do not match.');
     $('lock-submit').disabled = true;
     try {
@@ -2567,13 +2635,18 @@ function lockApp() {
 }
 
 $('lock-form').addEventListener('submit', onUnlockSubmit);
+// Lock automatically when the app has been in the background for 5 minutes.
+const AUTO_LOCK_MS = 5 * 60 * 1000;
+let hiddenAt = 0;
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) hiddenAt = Date.now();
+  else if (hiddenAt && !vault.locked && Date.now() - hiddenAt >= AUTO_LOCK_MS) lockApp();
+});
 $('btn-lock').addEventListener('click', lockApp);
 $('lock-reset').addEventListener('click', () => {
   if (!confirm('Forgotten your passphrase?\n\nThere is no way to recover the data without it. You can wipe everything and start fresh. This cannot be undone.')) return;
   if (!confirm('Really erase all stored data on this phone?')) return;
-  vault.destroy();
-  disableBiometric();
-  showLockScreen();
+  wipeThisPhone('reset');
 });
 
 // Security card actions
@@ -2586,7 +2659,7 @@ $('btn-backup').addEventListener('click', async () => {
   const url = URL.createObjectURL(new Blob([JSON.stringify(bundle)], { type: 'application/json' }));
   const a = document.createElement('a');
   a.href = url;
-  a.download = `evergreen-backup-${new Date().toISOString().slice(0, 10)}.json`;
+  a.download = `evergreen-backup-${todayISO()}.json`;
   a.click();
   URL.revokeObjectURL(url);
   setStatus('security-status', 'Backup saved (including photos). Keep it safe — it needs your passphrase to open.');
@@ -2602,8 +2675,10 @@ $('restore-file').addEventListener('change', async (e) => {
     const vaultBlob = parsed.app === 'evergreen-backup' ? parsed.vault : parsed; // new bundle or legacy raw blob
     await vault.restore(vaultBlob, pass);
     if (parsed.app === 'evergreen-backup' && parsed.photos) await importAllPhotos(parsed.photos);
+    disableBiometric(); // it held the passphrase from before the restore
+    refreshBiometricButtons();
     initAll();
-    setStatus('security-status', 'Backup restored.');
+    setStatus('security-status', 'Backup restored. Turn fingerprint / Face ID unlock back on if you use it.');
   } catch {
     setStatus('security-status', 'Could not restore — wrong passphrase or not a valid backup file.', true);
   } finally {
@@ -2617,6 +2692,7 @@ const BIO_OFFER_KEY = 'evergreen-bio-offer';
 async function offerBiometric(pass) {
   try { if (localStorage.getItem(BIO_OFFER_KEY) === 'no') return; } catch { return; }
   if (biometricConfigured() || !(await biometricAvailable())) return;
+  if (!$('sheet').hidden) return; // something more important is open (e.g. a link to confirm) — ask next time
   const msg = el('p', { class: 'status', role: 'status' });
   const yes = el('button', { class: 'primary', text: 'Turn it on' });
   const later = el('button', { text: 'Not now' });
@@ -2668,9 +2744,12 @@ $('btn-bio-disable').addEventListener('click', () => {
   refreshBiometricButtons();
 });
 $('btn-change-pass').addEventListener('click', async () => {
-  const pass = prompt('New passphrase (at least 6 characters):');
+  const current = prompt('Your current passphrase:');
+  if (current == null) return;
+  if (!(await vault.verify(current))) return setStatus('security-status', 'That\'s not your current passphrase.', true);
+  const pass = prompt('New passphrase (at least 8 characters):');
   if (pass == null) return;
-  if (pass.length < 6) return setStatus('security-status', 'Passphrase too short.', true);
+  if (pass.length < 8) return setStatus('security-status', 'Passphrase too short — use at least 8 characters.', true);
   if (prompt('Confirm the new passphrase:') !== pass) return setStatus('security-status', 'Passphrases did not match.', true);
   // Re-key by setting up a fresh vault with the current data.
   await vault.setup(pass, vault.data);
@@ -2689,6 +2768,38 @@ function openDetails(id) {
     d.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }
 }
+// Links can come from anyone, so show what's in one before adding it.
+function confirmImport(r) {
+  const v = loadVehicle();
+  const lines = [
+    ...r.deliveries.map((d) => `📦 ${d.item || 'Parcel'}${d.carrier ? ' · ' + d.carrier : ''}${d.expected ? ' · ' + fmtDate(d.expected) : ''}`),
+    ...r.events.map((e) => `📅 ${e.title} · ${e.date ? fmtDate(e.date) : 'no date'}${e.time ? ' ' + e.time : ''}`),
+    ...r.shopping.map((t) => `🛒 ${t}`),
+    ...r.subscriptions.map((x) => `🔁 ${x.name} · £${x.cost}`),
+    ...r.utilities.map((u) => `⚡ ${u.type} · ${u.provider || ''}`),
+    ...r.documents.map((x) => `📄 ${x.label}${x.expiry ? ' · expires ' + fmtDate(x.expiry) : ''}`),
+    ...r.loyalty.map((x) => `💳 ${x.name}`),
+    ...r.checkups.map((x) => `❤️ ${x.type}`),
+    ...r.maintenance.map((x) => `🏠 ${x.task}`),
+    ...Object.entries(r.vehicle).map(([k, val]) => `🚗 ${k.toUpperCase()}: ${k === 'reg' ? val : fmtDate(val)}${v[k] && v[k] !== val ? ` (replaces ${k === 'reg' ? v[k] : fmtDate(v[k])})` : ''}`),
+  ];
+  const list = el('ul', { class: 'small' }, ...lines.slice(0, 12).map((t) => el('li', { text: t })));
+  if (lines.length > 12) list.append(el('li', { class: 'muted', text: `…and ${lines.length - 12} more` }));
+  const add = el('button', { class: 'primary', text: `Add ${lines.length === 1 ? 'it' : 'all ' + lines.length}` });
+  const cancel = el('button', { text: 'Cancel' });
+  cancel.addEventListener('click', () => { closeSheet(); toast('Nothing was added.'); });
+  add.addEventListener('click', () => {
+    closeSheet();
+    const { count, undo } = applyParsedImport(r);
+    if (r.deliveries.length) goLife('deliveries');
+    if (!count) return toast('Already in Evergreen — nothing new to add.');
+    toast(`Added ${count} item${count === 1 ? '' : 's'} ✓`, { actionLabel: 'Undo', onAction: undo, ms: 8000 });
+  });
+  openSheet(el('h2', { text: 'Add these to Evergreen?' }),
+    el('p', { class: 'muted small', text: 'From the link you just opened. Only add it if you were expecting it.' }), list,
+    el('div', { class: 'row' }, cancel, add));
+}
+
 function handleLaunchParams() {
   const q = new URLSearchParams(location.search);
   if (![...q.keys()].length) return;
@@ -2702,13 +2813,8 @@ function handleLaunchParams() {
     if (paired()) await Promise.race([syncNow(), new Promise((r) => setTimeout(r, 5000))]);
     try {
       const r = parseImport(decodeImportPayload(importPayload));
-      if (importCount(r)) {
-        const { count, undo } = applyParsedImport(r);
-        if (r.deliveries.length) goLife('deliveries');
-        toast(`Added ${count} item${count === 1 ? '' : 's'} from your link ✓`, { actionLabel: 'Undo', onAction: undo, ms: 8000 });
-      } else {
-        toast('That link had nothing new to add.');
-      }
+      if (!importCount(r)) return toast('That link had nothing new to add.');
+      confirmImport(r);
     } catch {
       toast('Sorry — that import link could not be read.');
     }
@@ -2777,7 +2883,7 @@ function pullCalendar(manual = false) {
     calLastPull = Date.now();
     try {
       const hid = await householdId(s.householdCode);
-      const res = await fetch(`${s.syncUrl.replace(/\/+$/, '')}/cal?h=${hid}&url=${encodeURIComponent(s.icsUrl)}`, { cache: 'no-store' });
+      const res = await fetch(`${s.syncUrl.replace(/\/+$/, '')}/cal?h=${hid}&url=${encodeURIComponent(s.icsUrl)}`, { cache: 'no-store', headers: { 'X-Evergreen-Token': await writeToken(s.householdCode) } });
       if (!res.ok) {
         let msg = '';
         try { msg = (await res.json()).error; } catch { /* not json */ }
@@ -2831,6 +2937,7 @@ $('btn-cal-connect').addEventListener('click', async () => {
   try {
     await syncNow(); // makes sure the household exists on the server
     await pullCalendar(true);
+    if (sharedItems('device').some((x) => x.id === myDeviceRecordId())) { sharedUpdate(myDeviceRecordId(), { calSrc: settings().calSrc }); scheduleSync(); }
     $('cal-ics').value = '';
     setStatus('cal-conn-msg', `Connected — ${settings().calCount} events added to the family calendar ✓`);
     haptic();
@@ -2885,7 +2992,7 @@ async function ensureDeviceProtection(pass, force = false) {
     return;
   }
   const verifier = await makeVerifier(pass);
-  sharedSet({ id, type: 'device', dev: deviceId(), owner: ownerLabel(), verifier, updatedAt: now(), deleted: false });
+  sharedSet({ id, type: 'device', dev: deviceId(), owner: ownerLabel(), calSrc: settings().calSrc || '', verifier, updatedAt: now(), deleted: false });
   saveSettings({ devVerSet: true });
   scheduleSync();
   renderLost();
@@ -2951,18 +3058,19 @@ function wipeThisPhone(reason = 'lost') {
   try { vault.destroy(); } catch { /* ignore */ }
   try { indexedDB.deleteDatabase('evergreen-media'); } catch { /* ignore */ }
   try { localStorage.clear(); } catch { /* ignore */ }
+  try { caches.keys().then((ks) => ks.forEach((k) => caches.delete(k))); } catch { /* ignore */ }
   location.replace(location.pathname + '?wiped=' + reason);
 }
 async function reportLost(d) {
   const s = settings();
   const oldHid = await householdId(s.householdCode);
   const r = await fetch(`${s.syncUrl.replace(/\/+$/, '')}/retire?h=${oldHid}`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ wipe: [d.dev] }),
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Evergreen-Token': await writeToken(s.householdCode) }, body: JSON.stringify({ wipe: [d.dev] }),
   });
   if (!r.ok) { let m = ''; try { m = (await r.json()).error; } catch { /* not json */ } throw new Error(m || `the server returned ${r.status}`); }
   // The lost phone's record and its calendar events go; your data moves to a fresh space with a new code.
   sharedRemove(d.id);
-  for (const e of sharedItems('event')) if (e.src && e.who && e.who === d.owner) sharedRemove(e.id);
+  for (const e of sharedItems('event')) if (e.src && ((d.calSrc && e.src === d.calSrc) || (e.who && e.who === d.owner))) sharedRemove(e.id);
   const code = generateHouseholdCode();
   saveSettings({ householdCode: code });
   refreshPairUI();
@@ -3054,7 +3162,7 @@ function renderLost() {
 
 // ---------- app updates ----------
 // Must match CACHE in sw.js (a test checks this).
-const APP_VERSION = 'evergreen-v49';
+const APP_VERSION = 'evergreen-v50';
 let updateReady = false;
 async function checkForUpdate(manual = false) {
   try {

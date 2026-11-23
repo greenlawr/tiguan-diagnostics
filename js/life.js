@@ -31,11 +31,17 @@ export function employeeNI(income) {
   return Math.round(ni);
 }
 
-/** Rough dividend tax, with dividends stacked on top of other income. */
+/**
+ * Rough dividend tax, with dividends stacked on top of other income.
+ * Order of the stack: any unused Personal Allowance covers dividends at 0%,
+ * then the £500 dividend allowance (0%, but it still uses up band space),
+ * then 8.75% / 33.75% / 39.35%. The allowance tapers above £100k.
+ */
 export function dividendTax(otherIncome, dividends) {
-  const taxable = Math.max(0, dividends - 500); // dividend allowance
-  let pos = Math.max(otherIncome, PERSONAL_ALLOWANCE);
-  let remaining = taxable;
+  const pa = personalAllowance(otherIncome + dividends);
+  const basicTop = pa + BASIC_BAND;
+  let pos = otherIncome;
+  let remaining = dividends;
   let tax = 0;
   const take = (ceil, rate) => {
     const amt = Math.min(remaining, Math.max(0, ceil - pos));
@@ -43,7 +49,11 @@ export function dividendTax(otherIncome, dividends) {
     pos += amt;
     remaining -= amt;
   };
-  take(50270, 0.0875);
+  take(pa, 0); // unused Personal Allowance
+  const allowance = Math.min(remaining, 500);
+  pos += allowance;
+  remaining -= allowance;
+  take(basicTop, 0.0875);
   take(ADDITIONAL_THRESHOLD, 0.3375);
   take(Infinity, 0.3935);
   return Math.round(tax);
@@ -115,13 +125,16 @@ export function moneyOverview(subs = [], utils = []) {
 }
 
 // ---------- health ----------
-/** Next-due date from a last date + interval in months. */
+/** Next-due date from a last date + interval in months (calendar maths, no time zones). */
 export function nextDue(lastISO, intervalMonths) {
   if (!lastISO || !intervalMonths) return null;
-  const d = new Date(lastISO + 'T00:00:00');
-  if (isNaN(d)) return null;
-  d.setMonth(d.getMonth() + Number(intervalMonths));
-  return d.toISOString().slice(0, 10);
+  const [y, m, d] = String(lastISO).split('-').map(Number);
+  if (!y || !m || !d) return null;
+  const total = y * 12 + (m - 1) + Number(intervalMonths);
+  const ny = Math.floor(total / 12);
+  const nm = (total % 12) + 1;
+  const daysInMonth = new Date(Date.UTC(ny, nm, 0)).getUTCDate();
+  return `${ny}-${String(nm).padStart(2, '0')}-${String(Math.min(d, daysInMonth)).padStart(2, '0')}`;
 }
 
 // ---------- meter readings ----------

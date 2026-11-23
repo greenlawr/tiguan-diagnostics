@@ -1,5 +1,5 @@
 // Offline support: network first (so updates arrive), cached copy when there is no signal.
-const CACHE = 'evergreen-v49';
+const CACHE = 'evergreen-v50';
 const FILES = [
   './', 'index.html', 'styles.css', 'icon.svg', 'icon-192.png', 'icon-512.png', 'icon-maskable-512.png', 'apple-touch-icon.png', 'manifest.webmanifest',
   'js/app.js', 'js/appconnect.js', 'js/ble.js', 'js/biometric.js', 'js/deliveries.js', 'js/dtc.js', 'js/elm.js', 'js/explain.js', 'js/garage.js', 'js/household.js', 'js/ical.js', 'js/icons.js',
@@ -26,7 +26,9 @@ self.addEventListener('fetch', (event) => {
     fresh
       .then((response) => {
         const copy = response.clone();
-        caches.open(CACHE).then((c) => c.put(event.request, copy));
+        // Cache by path only, so one-tap import links and shared text never sit in the cache.
+        const key = new URL(req.url); key.search = '';
+        caches.open(CACHE).then((c) => c.put(key.toString(), copy));
         return response;
       })
       .catch(() => caches.match(event.request, { ignoreSearch: true }))

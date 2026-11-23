@@ -30,6 +30,16 @@ export async function householdId(code) {
   return toHex(digest).slice(0, 32);
 }
 
+/**
+ * Write key for the sync server, derived from the code (separately from the id
+ * and the encryption key). The server only stores a hash of it, and refuses
+ * changes, calendar fetches and "report lost" without it — so knowing the
+ * public id alone isn't enough to tamper with your shared space.
+ */
+export async function writeToken(code) {
+  return toHex(await crypto.subtle.digest('SHA-256', enc.encode('evergreen-write:' + normalizeCode(code))));
+}
+
 /** Secret AES key derived from the code (stays on the device). */
 export async function deriveSharedKey(code) {
   const base = await crypto.subtle.importKey('raw', enc.encode('evergreen-key:' + normalizeCode(code)), 'PBKDF2', false, ['deriveKey']);

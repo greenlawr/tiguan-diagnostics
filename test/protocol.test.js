@@ -444,8 +444,12 @@ test('UK income tax estimates (England, rough)', () => {
 
 test('NI and dividend tax', () => {
   assert.equal(employeeNI(50270), 3016);
-  assert.equal(dividendTax(0, 10000), Math.round(9500 * 0.0875)); // all basic
-  assert.equal(dividendTax(50000, 10000), Math.round((50270 - 50000) * 0.0875 + (10000 - 500 - (50270 - 50000)) * 0.3375));
+  assert.equal(dividendTax(0, 10000), 0); // covered by the unused Personal Allowance
+  // the £500 allowance uses up the last £270 of the basic band, so the rest is higher rate
+  assert.equal(dividendTax(50000, 10000), Math.round(9500 * 0.3375));
+  assert.equal(dividendTax(5000, 10000), Math.round(1930 * 0.0875));
+  assert.equal(dividendTax(49770, 1000), Math.round(500 * 0.3375));
+  assert.equal(dividendTax(0, 60000), Math.round(37200 * 0.0875 + 9730 * 0.3375));
   const th = takeHome(50270);
   assert.equal(th.net, 50270 - 7540 - 3016);
 });
@@ -464,6 +468,9 @@ test('subscriptions monthly/yearly totals', () => {
 
 test('health next-due and meter usage', () => {
   assert.equal(nextDue('2026-01-15', 6), '2026-07-15');
+  assert.equal(nextDue('2026-03-15', 6), '2026-09-15'); // no BST shift
+  assert.equal(nextDue('2026-08-31', 6), '2027-02-28'); // clamps to month end
+  assert.equal(nextDue('2025-12-10', 12), '2026-12-10');
   assert.equal(nextDue('', 6), null);
   const u = meterUsage([{ date: '2026-01-01', reading: 1000 }, { date: '2026-01-11', reading: 1100 }]);
   assert.equal(u.used, 100);

@@ -136,14 +136,21 @@ export function timeAgo(iso, now = Date.now()) {
 // ---------- mileage (incl. business reclaim) ----------
 // HMRC approved mileage rates (cars): 45p/mile up to 10,000 business miles in a
 // tax year, 25p/mile after. A guide only — not tax advice.
-export function mileageSummary(trips) {
-  const business = trips.filter((t) => t.business);
-  const businessMiles = business.reduce((s, t) => s + (t.miles || 0), 0);
-  const totalMiles = trips.reduce((s, t) => s + (t.miles || 0), 0);
+/** Start (6 April) of the UK tax year containing `now`, as YYYY-MM-DD. */
+export function taxYearStart(now = new Date()) {
+  const y = now.getMonth() > 3 || (now.getMonth() === 3 && now.getDate() >= 6) ? now.getFullYear() : now.getFullYear() - 1;
+  return `${y}-04-06`;
+}
+/** Business mileage for the current tax year (the 10,000-mile 45p limit is per tax year). */
+export function mileageSummary(trips, now = new Date()) {
+  const from = taxYearStart(now);
+  const inYear = trips.filter((t) => !t.date || t.date >= from);
+  const businessMiles = inYear.filter((t) => t.business).reduce((s, t) => s + (t.miles || 0), 0);
+  const totalMiles = inYear.reduce((s, t) => s + (t.miles || 0), 0);
   const first10k = Math.min(businessMiles, 10000);
   const over = Math.max(0, businessMiles - 10000);
   const reclaim = first10k * 0.45 + over * 0.25;
-  return { businessMiles, totalMiles, reclaim };
+  return { businessMiles, totalMiles, reclaim, from };
 }
 
 export function mileageExport(trips) {

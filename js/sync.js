@@ -2,7 +2,7 @@
 // to the zero-knowledge server, pulls the merged set, decrypts it. The server
 // only ever sees ciphertext plus timestamps (needed to merge).
 
-import { householdId, deriveSharedKey, encryptItem, decryptItem } from './household.js';
+import { householdId, deriveSharedKey, encryptItem, decryptItem, writeToken } from './household.js';
 
 const endpoint = (serverUrl, id) => serverUrl.replace(/\/+$/, '') + '/' + id;
 
@@ -23,7 +23,7 @@ export async function syncShared(serverUrl, code, localItems, fetchImpl = fetch)
 
   const res = await fetchImpl(endpoint(serverUrl, id), {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'X-Evergreen-Token': await writeToken(code) },
     body: JSON.stringify({ items: payload }),
   });
   if (!res.ok) throw new Error(`Sync server returned ${res.status}`);

@@ -7,9 +7,28 @@
 const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type',
+  'Access-Control-Allow-Headers': 'Content-Type, X-Evergreen-Token',
 };
 const json = (obj, status = 200) => new Response(JSON.stringify(obj), { status, headers: { 'Content-Type': 'application/json', ...CORS } });
+
+const TOMBSTONE_MS = 60 * 86400000; // deleted-item markers are kept 60 days, then dropped
+const MAX_CLOCK_AHEAD_MS = 2 * 60000; // a phone's clock can't put an item further in the future than this
+
+async function sha256hex(text) {
+  const d = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+  return [...new Uint8Array(d)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+// Write key: the first phone to present one registers it (only its hash is
+// stored); after that every write, calendar fetch and retire must present it.
+// Phones from before the key existed are let through until one is registered.
+async function authorised(request, env, hid) {
+  const token = request.headers.get('X-Evergreen-Token') || '';
+  const valid = /^[a-f0-9]{64}$/.test(token);
+  const stored = await env.HOUSEHOLD.get('auth:' + hid);
+  if (stored) return valid && (await sha256hex(token)) === stored;
+  if (valid) await env.HOUSEHOLD.put('auth:' + hid, await sha256hex(token));
+  return true;
+}
 
 export default {
   async fetch(request, env) {
@@ -22,6 +41,7 @@ export default {
     if (request.method === 'GET' && url.pathname.replace(/\/+$/, '').endsWith('/cal')) {
       const hid = url.searchParams.get('h') || '';
       if (!/^[a-f0-9]{16,64}$/.test(hid) || !(await env.HOUSEHOLD.get(hid))) return json({ error: 'unknown household — sync once first' }, 403);
+      if (!(await authorised(request, env, hid))) return json({ error: 'not allowed' }, 401);
       let target;
       try { target = new URL((url.searchParams.get('url') || '').replace(/^webcal:/i, 'https:')); } catch { return json({ error: 'bad calendar link' }, 400); }
       const allowed = target.protocol === 'https:' && (
@@ -49,6 +69,7 @@ export default {
       }
       if (request.method === 'POST' && route.endsWith('/retire')) {
         if (!retired && !(await env.HOUSEHOLD.get(hid))) return json({ error: 'unknown household' }, 404);
+        if (!retired && !(await authorised(request, env, hid))) return json({ error: 'not allowed' }, 401);
         let body;
         try { body = await request.json(); } catch { return json({ error: 'bad body' }, 400); }
         const wipe = Array.isArray(body.wipe) ? body.wipe : [];
@@ -56,6 +77,7 @@ export default {
         const prev = retired ? JSON.parse(retired).wipe || [] : [];
         await env.HOUSEHOLD.put('retired:' + hid, JSON.stringify({ at: Date.now(), wipe: [...new Set([...prev, ...wipe])] }));
         await env.HOUSEHOLD.delete(hid);
+        await env.HOUSEHOLD.delete('auth:' + hid);
         return json({ ok: true });
       }
       return json({ error: 'method not allowed' }, 405);
@@ -72,18 +94,23 @@ export default {
     }
 
     if (request.method === 'POST') {
+      if (!(await authorised(request, env, id))) return json({ error: 'not allowed' }, 401);
       let incoming;
       try {
         incoming = await request.json();
       } catch {
         return json({ error: 'bad body' }, 400);
       }
+      const serverNow = Date.now();
       const current = JSON.parse((await env.HOUSEHOLD.get(id)) || '{"items":{}}');
       for (const [key, value] of Object.entries(incoming.items || {})) {
         // Only accept well-formed ciphertext entries; last write wins per item.
-        if (!value || typeof value.updatedAt !== 'number') continue;
-        if (!current.items[key] || value.updatedAt > current.items[key].updatedAt) current.items[key] = value;
+        if (!value || typeof value.updatedAt !== 'number' || typeof value.iv !== 'string' || typeof value.ct !== 'string') continue;
+        const entry = { ...value, updatedAt: Math.min(value.updatedAt, serverNow + MAX_CLOCK_AHEAD_MS) };
+        if (!current.items[key] || entry.updatedAt > current.items[key].updatedAt) current.items[key] = entry;
       }
+      // Drop deleted-item markers once they're old enough to have reached both phones.
+      for (const [key, value] of Object.entries(current.items)) if (value.deleted && value.updatedAt < serverNow - TOMBSTONE_MS) delete current.items[key];
       // Cap stored size defensively (a shared household list should be small).
       const body = JSON.stringify(current);
       if (body.length > 2_000_000) return json({ error: 'too large' }, 413);

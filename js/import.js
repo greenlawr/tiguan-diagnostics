@@ -3,13 +3,30 @@
 // each form. One item per line: "type: field | field | field".
 
 const num = (s) => parseFloat(s) || 0;
-function iso(s) {
-  if (!s) return '';
-  const t = s.trim();
-  if (/^\d{4}-\d{2}-\d{2}$/.test(t)) return t;
-  const d = new Date(t);
-  return isNaN(d) ? '' : d.toISOString().slice(0, 10);
+const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+function ymd(y, m, d) {
+  if (y < 100) y += 2000;
+  const t = new Date(Date.UTC(y, m - 1, d));
+  if (t.getUTCFullYear() !== y || t.getUTCMonth() !== m - 1 || t.getUTCDate() !== d) return '';
+  return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
 }
+/** Dates the UK way: 2026-03-05, 05/03/2026 (day first), 5 March 2026, March 5th 2026. No time-zone shifts. */
+export function iso(s) {
+  if (!s) return '';
+  const t = String(s).trim();
+  let m = t.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (m) return ymd(+m[1], +m[2], +m[3]);
+  m = t.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{2}|\d{4})$/);
+  if (m) return ymd(+m[3], +m[2], +m[1]);
+  let day, mon, yr;
+  for (const w of t.toLowerCase().replace(/(\d)(st|nd|rd|th)\b/g, '$1').split(/[\s,]+/)) {
+    if (/^\d{4}$/.test(w)) yr = +w;
+    else if (/^\d{1,2}$/.test(w)) day = +w;
+    else if (MONTHS.includes(w.slice(0, 3))) mon = MONTHS.indexOf(w.slice(0, 3)) + 1;
+  }
+  return day && mon && yr ? ymd(yr, mon, day) : '';
+}
+const cycle = (c) => { const w = (c || '').toLowerCase(); return /year|annual|yr/.test(w) ? 'yearly' : /week/.test(w) ? 'weekly' : 'monthly'; };
 
 /** @returns grouped entries plus any lines that couldn't be understood. */
 export function parseImport(text) {
@@ -21,7 +38,7 @@ export function parseImport(text) {
     const type = m[1].trim().toLowerCase();
     const p = m[2].split('|').map((s) => s.trim());
     switch (type) {
-      case 'subscription': r.subscriptions.push({ name: p[0], cost: num(p[1]), cycle: (p[2] || 'monthly').toLowerCase(), renewal: iso(p[3]) }); break;
+      case 'subscription': r.subscriptions.push({ name: p[0], cost: num(p[1]), cycle: cycle(p[2]), renewal: iso(p[3]) }); break;
       case 'utility': r.utilities.push({ type: p[0], provider: p[1] || '', cost: num(p[2]), renewal: iso(p[3]), tariff: p[4] || '', usage: p[5] || '' }); break;
       case 'document': r.documents.push({ label: p[0], category: p[1] || 'Other', expiry: iso(p[2]), note: p[3] || '' }); break;
       case 'delivery': r.deliveries.push({ item: p[0], carrier: p[1] || 'Other', tracking: p[2] || '', expected: iso(p[3]) }); break;
