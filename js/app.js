@@ -18,6 +18,9 @@ import { generateHouseholdCode, normalizeCode } from './household.js';
 import { syncShared } from './sync.js';
 import { savePhoto, loadPhoto, deletePhoto, exportAllPhotos, importAllPhotos } from './photos.js';
 import { parseImport, importCount } from './import.js';
+import { icon, TILE_ICON, SEC_ICON_NAME } from './icons.js';
+
+const haptic = (ms = 12) => { try { navigator.vibrate?.(ms); } catch { /* unsupported */ } };
 
 const $ = (id) => document.getElementById(id);
 
@@ -72,6 +75,7 @@ function toast(message, { actionLabel, onAction, ms = 5000 } = {}) {
     t.append(btn);
   }
   t.hidden = false;
+  haptic(10);
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => (t.hidden = true), ms);
 }
@@ -151,8 +155,8 @@ function initLifeNav() {
   const menu = el('div', { id: 'life-menu', class: 'tiles' });
   for (const h of tab.querySelectorAll(':scope > h3[id^="sec-"]')) {
     const name = h.id.slice(4);
-    const btn = el('button', { class: 'tile-btn' }, el('span', { class: 'tile-icon', text: SEC_ICON[name] || '•' }), el('span', { class: 'tile-label', text: h.textContent }));
-    btn.addEventListener('click', () => showLifeSection(name));
+    const btn = el('button', { class: 'tile-btn' }, icon(SEC_ICON_NAME[name] || 'doc'), el('span', { class: 'tile-label', text: h.textContent }));
+    btn.addEventListener('click', () => { haptic(); showLifeSection(name); });
     menu.append(btn);
   }
   tab.prepend(menu);
@@ -1192,10 +1196,10 @@ function renderTiles() {
   if (!grid) return;
   grid.replaceChildren();
   for (const t of HOME_TILES) {
-    const tile = el('button', { class: 'tile-btn' }, el('span', { class: 'tile-icon', text: t.icon }), el('span', { class: 'tile-label', text: t.label }));
+    const tile = el('button', { class: 'tile-btn' }, icon(TILE_ICON[t.label] || 'doc'), el('span', { class: 'tile-label', text: t.label }));
     const badge = t.badge && t.badge();
     if (badge) tile.append(el('span', { class: 'tag ' + badge.cls, text: badge.text }));
-    tile.addEventListener('click', t.go);
+    tile.addEventListener('click', () => { haptic(); t.go(); });
     grid.append(tile);
   }
 }

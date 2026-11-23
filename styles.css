@@ -290,7 +290,23 @@ h3 { margin-top: 18px; }
   padding: 16px; min-height: 104px; position: relative;
 }
 .tile-btn .tile-icon { font-size: 28px; line-height: 1; }
+.tile-btn .ic { width: 30px; height: 30px; color: var(--accent); }
 .tile-btn .tile-label { font-weight: 600; font-size: 15px; }
+.ic { width: 24px; height: 24px; flex: 0 0 auto; }
+.nav-pill .ic, .life-back .ic { vertical-align: middle; }
+
+/* Press feedback + motion (respecting reduced-motion) */
+button, .btn-a, .tile-btn { transition: transform 0.08s ease, background 0.15s ease, border-color 0.15s ease; }
+button:active:not(:disabled), .btn-a:active { transform: translateY(1px); }
+.tile-btn:active { transform: scale(0.97); }
+@media (prefers-reduced-motion: no-preference) {
+  .tab.active { animation: evg-in 0.24s ease both; }
+  @keyframes evg-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+  .toast:not([hidden]) { animation: evg-toast 0.24s ease both; }
+  @keyframes evg-toast { from { opacity: 0; transform: translate(-50%, 12px); } to { opacity: 1; transform: translate(-50%, 0); } }
+  .verdict { animation: evg-fade 0.3s ease both; }
+  @keyframes evg-fade { from { opacity: 0; } to { opacity: 1; } }
+}
 .tile-btn .tag { position: absolute; top: 12px; right: 12px; }
 .nav-pill { flex: 1; min-width: 0; min-height: 42px; padding: 8px 6px; border-radius: 999px; font-size: 14px; font-weight: 600; }
 .nav-pill.current { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
