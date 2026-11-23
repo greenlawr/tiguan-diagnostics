@@ -1820,7 +1820,10 @@ function refreshPairUI() {
 }
 const persistSyncUrl = debounce((v) => saveSettings({ syncUrl: v }), 600);
 $('sync-url').addEventListener('input', (e) => persistSyncUrl(e.target.value.trim()));
+// Save the typed address immediately (don't wait for the input debounce).
+function commitSyncUrl() { const v = $('sync-url').value.trim(); if (v) saveSettings({ syncUrl: v }); }
 $('btn-pair-create').addEventListener('click', () => {
+  commitSyncUrl();
   if (!settings().syncUrl) return setStatus('pair-status', 'Enter the sync server address first (see the sync-worker guide).', true);
   const code = generateHouseholdCode();
   saveSettings({ householdCode: code });
@@ -1831,6 +1834,7 @@ $('btn-pair-create').addEventListener('click', () => {
   syncNow();
 });
 $('btn-pair-join').addEventListener('click', () => {
+  commitSyncUrl();
   if (!settings().syncUrl) return setStatus('pair-status', 'Enter the sync server address first.', true);
   const input = prompt('Enter the household code your partner shared:');
   if (!input) return;
@@ -1850,6 +1854,16 @@ $('btn-pair-leave').addEventListener('click', () => {
   refreshPairUI();
 });
 $('btn-sync').addEventListener('click', () => syncNow());
+
+// Automatic sync: when the app comes back to the screen, when the phone gets
+// signal back, and every minute while it's open. Only ever while unlocked.
+const AUTO_SYNC_MS = 60 * 1000;
+function autoSync() {
+  if (!vault.locked && !document.hidden && paired()) syncNow();
+}
+document.addEventListener('visibilitychange', autoSync);
+window.addEventListener('online', autoSync);
+setInterval(autoSync, AUTO_SYNC_MS);
 
 let syncTimer = null;
 function scheduleSync() {
