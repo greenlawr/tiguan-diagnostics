@@ -2800,6 +2800,7 @@ $('btn-cal-connect').addEventListener('click', async () => {
   const link = $('cal-ics').value.trim().replace(/^webcal:/i, 'https:');
   if (!/^https:\/\/\S+/.test(link)) return setStatus('cal-conn-msg', "Paste your calendar's secret address first.", true);
   if (/calendar\.google\.com/.test(link) && !/\/ical\//.test(link)) return setStatus('cal-conn-msg', "That's not the iCal address — copy 'Secret address in iCal format' (it ends in .ics).", true);
+  if (/calendar\.google\.com\/calendar\/ical\/[^/]+\/public\//.test(link)) return setStatus('cal-conn-msg', "That's the public address — Google only allows it for public calendars. Copy the 'Secret address in iCal format' just below it instead (it has 'private-' in it).", true);
   if (!paired()) return setStatus('cal-conn-msg', 'Set up Sharing & sync first — the calendar uses the same server.', true);
   const btn = $('btn-cal-connect');
   btn.disabled = true;
@@ -2836,7 +2837,7 @@ $('cal-hide').addEventListener('input', (e) => persistCalHide(e.target.value));
 
 // ---------- app updates ----------
 // Must match CACHE in sw.js (a test checks this).
-const APP_VERSION = 'evergreen-v44';
+const APP_VERSION = 'evergreen-v45';
 let updateReady = false;
 async function checkForUpdate(manual = false) {
   try {
