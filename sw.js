@@ -1,5 +1,5 @@
 // Offline support: network first (so updates arrive), cached copy when there is no signal.
-const CACHE = 'evergreen-v33';
+const CACHE = 'evergreen-v34';
 const FILES = [
   './', 'index.html', 'styles.css', 'icon.svg', 'apple-touch-icon.png', 'manifest.webmanifest',
   'js/app.js', 'js/appconnect.js', 'js/ble.js', 'js/biometric.js', 'js/deliveries.js', 'js/dtc.js', 'js/elm.js', 'js/explain.js', 'js/garage.js', 'js/household.js', 'js/icons.js',

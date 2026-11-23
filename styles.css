@@ -378,3 +378,6 @@ button:active:not(:disabled), .btn-a:active { transform: translateY(1px); }
   min-height: 56px;
 }
 .tabs button.active { color: var(--accent); border-top-color: var(--accent); }
+
+.agenda-day{font-weight:600;font-size:.82rem;letter-spacing:.02em;margin:.6rem 0 .15rem;opacity:.7}
+.agenda-day:first-of-type{margin-top:.2rem}

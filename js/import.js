@@ -13,7 +13,7 @@ function iso(s) {
 
 /** @returns grouped entries plus any lines that couldn't be understood. */
 export function parseImport(text) {
-  const r = { subscriptions: [], utilities: [], documents: [], deliveries: [], loyalty: [], checkups: [], maintenance: [], shopping: [], vehicle: {}, errors: [] };
+  const r = { subscriptions: [], utilities: [], documents: [], deliveries: [], loyalty: [], checkups: [], maintenance: [], shopping: [], events: [], vehicle: {}, errors: [] };
   const lines = (text || '').split(/\r?\n/).map((l) => l.trim()).filter((l) => l && !l.startsWith('#'));
   for (const line of lines) {
     const m = line.match(/^([a-z][a-z \-]*):\s*(.*)$/i);
@@ -25,6 +25,7 @@ export function parseImport(text) {
       case 'utility': r.utilities.push({ type: p[0], provider: p[1] || '', cost: num(p[2]), renewal: iso(p[3]), tariff: p[4] || '', usage: p[5] || '' }); break;
       case 'document': r.documents.push({ label: p[0], category: p[1] || 'Other', expiry: iso(p[2]), note: p[3] || '' }); break;
       case 'delivery': r.deliveries.push({ item: p[0], carrier: p[1] || 'Other', tracking: p[2] || '', expected: iso(p[3]) }); break;
+      case 'event': r.events.push({ title: p[0], date: iso(p[1]), time: p[2] || '', where: p[3] || '' }); break;
       case 'loyalty': r.loyalty.push({ name: p[0], number: p[1] || '' }); break;
       case 'checkup': r.checkups.push({ type: p[0], last: iso(p[1]), interval: parseInt(p[2], 10) || 0 }); break;
       case 'maintenance': r.maintenance.push({ task: p[0], date: iso(p[1]) }); break;
@@ -45,6 +46,6 @@ export function importCount(r) {
   return (
     r.subscriptions.length + r.utilities.length + r.documents.length + r.deliveries.length +
     r.loyalty.length + r.checkups.length + r.maintenance.length + r.shopping.length +
-    Object.keys(r.vehicle).length
+    r.events.length + Object.keys(r.vehicle).length
   );
 }

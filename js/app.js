@@ -1106,6 +1106,7 @@ function compressImage(file, maxSize = 900, quality = 0.6) {
 
 // ---------- deliveries ----------
 const DELIVERIES_KEY = 'tiguan-deliveries';
+const EVENTS_KEY = 'tiguan-events';
 
 function renderDeliveries() {
   const sel = $('del-carrier');
@@ -1208,6 +1209,57 @@ function renderHome() {
   renderTiles();
 }
 
+// ---------- this-week agenda (a glanceable snapshot of the family calendar) ----------
+function eventStart(e) {
+  const t = (e.time || '').trim();
+  const hhmm = /^\d{1,2}:\d{2}$/.test(t) ? (t.length === 4 ? '0' + t : t) : '00:00';
+  const d = new Date((e.date || '') + 'T' + hhmm + ':00');
+  return isNaN(d) ? null : d;
+}
+/** Future events within `days` of today, soonest first. */
+function upcomingEvents(days = 7) {
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const horizon = new Date(today); horizon.setDate(horizon.getDate() + days + 1);
+  const rows = store.load(EVENTS_KEY, []).filter((e) => {
+    if (!e.date) return false;
+    const d = new Date(e.date + 'T00:00:00');
+    return !isNaN(d) && d >= today && d < horizon;
+  });
+  rows.sort((a, b) => ((eventStart(a)?.getTime() || 0) - (eventStart(b)?.getTime() || 0)));
+  return rows;
+}
+/** Drop events whose day has passed, so the store doesn't grow forever. */
+function pruneEvents() {
+  const all = store.load(EVENTS_KEY, []);
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const kept = all.filter((e) => { if (!e.date) return true; const d = new Date(e.date + 'T00:00:00'); return !isNaN(d) && d >= today; });
+  if (kept.length !== all.length) store.save(EVENTS_KEY, kept);
+}
+function dayLabel(isoDate) {
+  const d = new Date(isoDate + 'T00:00:00');
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const diff = Math.round((d - today) / 86400000);
+  if (diff === 0) return 'Today';
+  if (diff === 1) return 'Tomorrow';
+  return d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short' });
+}
+function renderAgenda(out) {
+  pruneEvents();
+  const rows = upcomingEvents(7);
+  if (!rows.length) return;
+  const card = el('div', { class: 'card' }, el('h2', { text: 'This week' }));
+  let lastDay = null;
+  for (const e of rows) {
+    if (e.date !== lastDay) { card.append(el('div', { class: 'agenda-day', text: dayLabel(e.date) })); lastDay = e.date; }
+    const when = /^\d/.test((e.time || '').trim()) ? e.time.trim() : 'All day';
+    card.append(el('div', { class: 'line' },
+      el('div', {}, el('div', { class: 'name', text: e.title || 'Event' }), e.where ? el('div', { class: 'sub', text: e.where }) : el('div', { class: 'sub', text: '' })),
+      el('span', { class: 'tag dim', text: when })
+    ));
+  }
+  out.append(card);
+}
+
 function renderDashboard() {
   const out = $('dashboard');
   if (!out) return;
@@ -1237,6 +1289,8 @@ function renderDashboard() {
   out.replaceChildren(card);
 
   if (isAppEmpty()) out.append(welcomeCard());
+
+  renderAgenda(out);
 
   if (items.length) {
     const list = el('ul', { class: 'list' });
@@ -2001,6 +2055,15 @@ function applyParsedImport(r) {
   add(UTIL_KEY, r.utilities, (u) => ({ id: uid(), ...u }));
   add(DOCS_KEY, r.documents, (d) => ({ id: uid(), ...d }));
   add(DELIVERIES_KEY, r.deliveries, (d) => ({ id: uid(), done: false, ...d }));
+  // Calendar events: dedupe against what's already stored (same date + title),
+  // so repeated morning imports never pile up duplicates.
+  if (r.events.length) {
+    snap(EVENTS_KEY, []);
+    const existing = store.load(EVENTS_KEY, []);
+    const seen = new Set(existing.map((e) => (e.date || '') + '|' + (e.title || '').trim().toLowerCase()));
+    const fresh = r.events.filter((e) => { const k = (e.date || '') + '|' + (e.title || '').trim().toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; });
+    if (fresh.length) store.save(EVENTS_KEY, [...fresh.map((e) => ({ id: uid(), ...e })), ...existing]);
+  }
   add(LOYAL_KEY, r.loyalty, (c) => ({ id: uid(), ...c }));
   add(CHECK_KEY, r.checkups, (c) => ({ id: uid(), ...c }));
   add(MAINT_KEY, r.maintenance, (m) => ({ id: uid(), ...m }));
