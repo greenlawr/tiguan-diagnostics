@@ -13,6 +13,7 @@ import { takeHome, dividendTax, taxDeadlines, subscriptionsTotal, nextDue, meter
 import { fuelStats, renewals, countdown, upcomingReminders, parkMapsUrl, timeAgo, mileageSummary, mileageExport } from './garage.js';
 import { Vault } from './vault.js';
 import { CARRIER_NAMES, trackingUrl, parcelStatus, parseShared } from './deliveries.js';
+import { biometricAvailable, biometricConfigured, enableBiometric, unlockBiometric, disableBiometric } from './biometric.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -1476,9 +1477,28 @@ function showLockScreen() {
     ? 'Set a passphrase to protect everything you store here. It never leaves this phone, and it can\'t be recovered if you forget it — so make it memorable.'
     : 'Enter your passphrase to unlock your data.';
   $('lock-submit').textContent = setupMode ? 'Create my vault' : 'Unlock';
+  $('btn-biometric').hidden = setupMode || !biometricConfigured();
   $('lock-screen').hidden = false;
-  $('lock-pass').focus();
+  if (!setupMode && biometricConfigured()) tryBiometricUnlock();
+  else $('lock-pass').focus();
 }
+
+async function tryBiometricUnlock() {
+  const btn = $('btn-biometric');
+  btn.disabled = true;
+  try {
+    const passphrase = await unlockBiometric();
+    await vault.unlock(passphrase);
+    $('lock-screen').hidden = true;
+    initAll();
+  } catch (e) {
+    $('lock-error').textContent = /failed|not set up/i.test(e.message) ? '' : e.message;
+    $('lock-pass').focus();
+  } finally {
+    btn.disabled = false;
+  }
+}
+$('btn-biometric').addEventListener('click', tryBiometricUnlock);
 
 async function onUnlockSubmit(e) {
   e.preventDefault();
@@ -1528,6 +1548,7 @@ $('lock-reset').addEventListener('click', () => {
   if (!confirm('Forgotten your passphrase?\n\nThere is no way to recover the data without it. You can wipe everything and start fresh. This cannot be undone.')) return;
   if (!confirm('Really erase all stored data on this phone?')) return;
   vault.destroy();
+  disableBiometric();
   showLockScreen();
 });
 
@@ -1561,6 +1582,30 @@ $('restore-file').addEventListener('change', async (e) => {
     e.target.value = '';
   }
 });
+async function refreshBiometricButtons() {
+  const configured = biometricConfigured();
+  const available = await biometricAvailable();
+  $('btn-bio-enable').hidden = configured || !available;
+  $('btn-bio-disable').hidden = !configured;
+}
+$('btn-bio-enable').addEventListener('click', async () => {
+  const pass = prompt('Confirm your passphrase to turn on fingerprint unlock:');
+  if (!pass) return;
+  if (!(await vault.verify(pass))) return setStatus('security-status', 'Wrong passphrase.', true);
+  setStatus('security-status', 'Follow your phone\'s prompt…');
+  try {
+    await enableBiometric(pass);
+    setStatus('security-status', 'Fingerprint unlock is on. Your passphrase still works too.');
+  } catch (e) {
+    setStatus('security-status', e.message || 'Could not enable fingerprint unlock.', true);
+  }
+  refreshBiometricButtons();
+});
+$('btn-bio-disable').addEventListener('click', () => {
+  disableBiometric();
+  setStatus('security-status', 'Fingerprint unlock turned off.');
+  refreshBiometricButtons();
+});
 $('btn-change-pass').addEventListener('click', async () => {
   const pass = prompt('New passphrase (at least 6 characters):');
   if (pass == null) return;
@@ -1568,7 +1613,9 @@ $('btn-change-pass').addEventListener('click', async () => {
   if (prompt('Confirm the new passphrase:') !== pass) return setStatus('security-status', 'Passphrases did not match.', true);
   // Re-key by setting up a fresh vault with the current data.
   await vault.setup(pass, vault.data);
-  setStatus('security-status', 'Passphrase changed. Save a fresh backup.');
+  disableBiometric(); // the stored wrapped passphrase is now stale
+  refreshBiometricButtons();
+  setStatus('security-status', 'Passphrase changed. Save a fresh backup, and re-enable fingerprint unlock if you use it.');
 });
 
 // ---------- launch actions: share-to-app + home-screen shortcuts ----------
@@ -1615,6 +1662,7 @@ function initAll() {
   renderDeliveries();
   initLifeSections();
   renderDashboard();
+  refreshBiometricButtons();
   if (!bluetoothSupported()) {
     $('unsupported').hidden = false;
     $('btn-connect').disabled = true;

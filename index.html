@@ -21,6 +21,7 @@
         <p id="lock-error" class="status error" role="alert"></p>
         <button id="lock-submit" class="primary big" type="submit">Unlock</button>
       </form>
+      <button id="btn-biometric" class="big" type="button" hidden>Unlock with fingerprint</button>
       <button id="lock-reset" class="link" type="button" hidden>Forgotten your passphrase?</button>
     </div>
   </div>
@@ -411,6 +412,8 @@
         <button id="btn-backup" class="primary">Save encrypted backup</button>
         <button id="btn-restore">Restore from a backup</button>
         <input id="restore-file" type="file" accept="application/json,.json" hidden>
+        <button id="btn-bio-enable" hidden>Enable fingerprint unlock</button>
+        <button id="btn-bio-disable" hidden>Turn off fingerprint unlock</button>
         <button id="btn-change-pass">Change passphrase</button>
         <button id="btn-lock2">Lock now</button>
         <p id="security-status" class="status" role="status"></p>

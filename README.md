@@ -4,7 +4,7 @@ A private, installable phone app for life admin — car, documents, reminders an
 
 ## Security
 
-All saved data is held in an **encrypted vault**: it is written to the phone only as AES-256-GCM ciphertext, with the key derived from your passphrase (PBKDF2) and never stored. Opening the app requires the passphrase; there is no server and no recovery, so you can save an **encrypted backup file** (useless without the passphrase). The public GitHub repo contains only the app's code — never any of your data.
+All saved data is held in an **encrypted vault**: it is written to the phone only as AES-256-GCM ciphertext, with the key derived from your passphrase (PBKDF2) and never stored. Opening the app requires the passphrase (or **fingerprint/face unlock**, which uses your phone's secure hardware to protect a copy of the passphrase — the passphrase always remains as a fallback, so biometrics can never lock you out). There is no server and no recovery, so you can save an **encrypted backup file** (useless without the passphrase). The public GitHub repo contains only the app's code — never any of your data.
 
 ## What it does
 
@@ -98,6 +98,9 @@ npm start   # serve on http://localhost:8080
 | `js/trip.js` | Fuel-economy maths and trip recording |
 | `js/vehicle.js` | MOT countdown, gov.uk links, calendar reminder |
 | `js/vault.js` | Encrypted on-device vault (AES-256-GCM + PBKDF2), backup/restore |
+| `js/biometric.js` | Fingerprint/face unlock via WebAuthn PRF (passphrase stays as fallback) |
+| `js/life.js` | UK tax estimators, subscriptions, health due-dates, meter usage |
+| `js/deliveries.js` | Parcel tracker; `js/loyalty` lives in app.js |
 | `js/deliveries.js` | Parcel tracker: courier links, status, share-sheet parsing |
 | `js/garage.js` | Car hub: fuel economy, renewals, mileage/HMRC reclaim, parking |
 | `js/appconnect.js` | Read-only "why isn't Android Auto working?" diagnosis |

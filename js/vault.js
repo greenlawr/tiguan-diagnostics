@@ -104,6 +104,19 @@ export class Vault {
     this.data = null;
   }
 
+  /** Check a passphrase without changing the unlocked state. */
+  async verify(passphrase) {
+    try {
+      const blob = this._readBlob();
+      if (!blob) return false;
+      const key = await deriveKey(passphrase, fromB64(blob.salt), blob.iter || ITERATIONS);
+      await decryptWithKey(key, blob);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   get(collection, fallback) {
     if (this.locked) return fallback;
     return collection in this.data ? this.data[collection] : fallback;

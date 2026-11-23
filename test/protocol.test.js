@@ -470,3 +470,16 @@ test('health next-due and meter usage', () => {
   assert.equal(u.perDay, 10);
   assert.equal(meterUsage([{ date: '2026-01-01', reading: 1000 }]), null);
 });
+
+// ---------- biometric passphrase wrapping ----------
+import { wrapSecret, unwrapSecret } from '../js/biometric.js';
+import { webcrypto } from 'node:crypto';
+
+test('biometric wrap/unwrap round-trips the passphrase and rejects a wrong key', async () => {
+  const rawKey = webcrypto.getRandomValues(new Uint8Array(32));
+  const blob = await wrapSecret('my secret passphrase', rawKey);
+  assert.equal(await unwrapSecret(blob, rawKey), 'my secret passphrase');
+  assert.ok(!JSON.stringify(blob).includes('secret'));
+  const wrongKey = webcrypto.getRandomValues(new Uint8Array(32));
+  await assert.rejects(unwrapSecret(blob, wrongKey));
+});
