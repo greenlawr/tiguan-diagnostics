@@ -11,6 +11,7 @@ import { Trip, fuelRateFrom5E, fuelRateFromMaf, mpgUk } from './trip.js';
 import { calendarUrl, cleanReg, GOV_MOT_HISTORY, GOV_TAX_CHECK } from './vehicle.js';
 import { fuelStats, renewals, countdown, upcomingReminders, parkMapsUrl, timeAgo, mileageSummary, mileageExport } from './garage.js';
 import { Vault } from './vault.js';
+import { CARRIER_NAMES, trackingUrl, parcelStatus, parseShared } from './deliveries.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -934,6 +935,53 @@ function compressImage(file, maxSize = 900, quality = 0.6) {
   });
 }
 
+// ---------- deliveries ----------
+const DELIVERIES_KEY = 'tiguan-deliveries';
+
+function renderDeliveries() {
+  const sel = $('del-carrier');
+  if (sel && !sel.options.length) for (const name of CARRIER_NAMES) sel.add(new Option(name, name));
+  const items = store.load(DELIVERIES_KEY, []).filter((d) => !d.done);
+  const list = $('del-list');
+  list.replaceChildren();
+  const withStatus = items.map((d) => ({ d, s: parcelStatus(d.expected) }));
+  withStatus.sort((a, b) => (a.s.days ?? 9999) - (b.s.days ?? 9999));
+  for (const { d, s } of withStatus) {
+    const head = el('div', { class: 'line' },
+      el('div', {}, el('div', { class: 'name', text: d.item || 'Parcel' }), el('div', { class: 'sub', text: d.carrier })),
+      el('span', { class: 'tag ' + s.level, text: s.text })
+    );
+    const row = el('div', { class: 'card doc' }, head);
+    const actions = el('div', { class: 'row', style: 'margin-top:10px' });
+    const track = el('a', { class: 'btn-a', href: trackingUrl(d.carrier, d.tracking), target: '_blank', rel: 'noopener', text: 'Track parcel →' });
+    track.style.flex = '1';
+    const arrived = el('button', { text: 'Arrived' });
+    arrived.addEventListener('click', () => {
+      const all = store.load(DELIVERIES_KEY, []).map((x) => (x.id === d.id ? { ...x, done: true } : x));
+      store.save(DELIVERIES_KEY, all);
+      renderDeliveries();
+      renderDashboard();
+    });
+    actions.append(track, arrived);
+    row.append(actions);
+    list.append(row);
+  }
+  if (!items.length) list.append(el('li', { class: 'muted small', text: 'No parcels being tracked.' }));
+}
+$('btn-del-add').addEventListener('click', () => {
+  const item = $('del-item').value.trim();
+  const tracking = $('del-tracking').value.trim();
+  if (!item && !tracking) {
+    alert('Add at least a name or a tracking number.');
+    return;
+  }
+  const entry = { id: Date.now(), item, carrier: $('del-carrier').value, tracking, expected: $('del-expected').value, done: false };
+  store.save(DELIVERIES_KEY, [entry, ...store.load(DELIVERIES_KEY, [])]);
+  for (const id of ['del-item', 'del-tracking', 'del-expected']) $(id).value = '';
+  renderDeliveries();
+  renderDashboard();
+});
+
 function greeting() {
   const h = new Date().getHours();
   return h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening';
@@ -947,6 +995,13 @@ function renderDashboard() {
     renewalDates: { mot: v.mot, tax: v.tax, insurance: v.insurance, service: v.service },
     documents: store.load(DOCS_KEY, []),
   });
+  for (const d of store.load(DELIVERIES_KEY, [])) {
+    if (d.done || !d.expected) continue;
+    const s = parcelStatus(d.expected);
+    if (s.days == null) continue;
+    items.push({ label: d.item || 'Parcel', sub: 'Delivery', days: s.days, level: s.level === 'dim' ? 'ok' : s.level, text: s.text });
+  }
+  items.sort((a, b) => a.days - b.days);
   const pressing = items.filter((i) => i.level === 'urgent' || i.level === 'soon').length;
   const summary = !items.length
     ? 'Nothing with a date yet — add renewals or documents below and they\'ll show here.'
@@ -1198,6 +1253,40 @@ $('btn-change-pass').addEventListener('click', async () => {
   setStatus('security-status', 'Passphrase changed. Save a fresh backup.');
 });
 
+// ---------- launch actions: share-to-app + home-screen shortcuts ----------
+const goTab = (name) => document.querySelector(`.tabs button[data-tab="${name}"]`)?.click();
+function openDetails(id) {
+  const d = $(id);
+  if (d) {
+    d.open = true;
+    d.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+}
+function handleLaunchParams() {
+  const q = new URLSearchParams(location.search);
+  if (![...q.keys()].length) return;
+  const action = q.get('action');
+  const hasShared = q.has('title') || q.has('text') || q.has('url');
+  history.replaceState(null, '', location.pathname); // don't repeat on refresh
+  if (hasShared) {
+    const shared = parseShared({ title: q.get('title') || '', text: q.get('text') || '', url: q.get('url') || '' });
+    goTab('life');
+    $('del-item').value = shared.item || '';
+    $('del-carrier').value = CARRIER_NAMES.includes(shared.carrier) ? shared.carrier : 'Other';
+    $('del-tracking').value = shared.tracking || shared.link || '';
+    openDetails('del-form');
+    return;
+  }
+  const map = { fuel: ['car', 'fuel-form'], doc: ['life', 'doc-form'], delivery: ['life', 'del-form'] };
+  if (action === 'park') {
+    goTab('car');
+    $('btn-park').scrollIntoView({ behavior: 'smooth', block: 'center' });
+  } else if (map[action]) {
+    goTab(map[action][0]);
+    openDetails(map[action][1]);
+  }
+}
+
 // ---------- startup ----------
 function initAll() {
   setConnected(false);
@@ -1205,6 +1294,7 @@ function initAll() {
   renderTrips();
   initCarTab();
   renderDocs();
+  renderDeliveries();
   renderDashboard();
   if (!bluetoothSupported()) {
     $('unsupported').hidden = false;
@@ -1212,6 +1302,7 @@ function initAll() {
   } else {
     refreshReconnect();
   }
+  handleLaunchParams();
 }
 
 try {

@@ -408,3 +408,25 @@ test('upcomingReminders merges car renewals and document expiries, soonest first
   assert.equal(items[1].sub, 'Passport');
   assert.equal(upcomingReminders({}, now).length, 0);
 });
+
+// ---------- deliveries ----------
+import { trackingUrl, parcelStatus, parseShared, CARRIER_NAMES } from '../js/deliveries.js';
+
+test('delivery tracking links and status', () => {
+  assert.match(trackingUrl('Royal Mail', 'AB123'), /royalmail\.com.*AB123/);
+  assert.match(trackingUrl('Evri', 'X9'), /evri\.com\/track\/parcel\/X9/);
+  assert.match(trackingUrl('Nonsense', '55'), /google\.com\/search/); // unknown -> search
+  const now = new Date('2026-06-01T12:00:00');
+  assert.equal(parcelStatus('2026-06-01', now).text, 'Arriving today');
+  assert.equal(parcelStatus('2026-06-02', now).text, 'Arriving tomorrow');
+  assert.equal(parcelStatus('2026-05-30', now).level, 'soon'); // overdue
+  assert.equal(parcelStatus('', now).days, null);
+});
+
+test('parseShared pulls item, carrier and tracking from shared text', () => {
+  const r = parseShared({ title: 'Your Evri parcel', text: 'Tracking H00ABC12345 is on its way', url: 'https://evri.com/track/H00ABC12345' });
+  assert.equal(r.carrier, 'Evri');
+  assert.equal(r.tracking, 'H00ABC12345');
+  assert.ok(r.item.length > 0);
+  assert.ok(CARRIER_NAMES.includes('Amazon'));
+});

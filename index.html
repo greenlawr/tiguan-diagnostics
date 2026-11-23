@@ -109,7 +109,7 @@
       <h3>Fuel log</h3>
       <div class="card">
         <div id="fuel-stats" class="grid"></div>
-        <details class="inner-form">
+        <details class="inner-form" id="fuel-form">
           <summary>Add a fill-up</summary>
           <div class="grid2">
             <label class="field">Date<input id="fuel-date" type="date"></label>
@@ -161,6 +161,22 @@
     <!-- Life admin: documents & renewals vault -->
     <section id="tab-life" class="tab">
       <div id="dashboard"></div>
+
+      <h3>Deliveries</h3>
+      <div class="card">
+        <p class="muted small">Add a parcel to see it on your dashboard with a link to the courier's live tracking. Tip: from Amazon or an email, tap Share → My Life to add it quickly.</p>
+        <details class="inner-form" id="del-form">
+          <summary>Add a delivery</summary>
+          <label class="field">What is it?<input id="del-item" type="text" placeholder="e.g. Running shoes"></label>
+          <label class="field">Courier
+            <select id="del-carrier"></select>
+          </label>
+          <label class="field">Tracking number (optional)<input id="del-tracking" type="text" autocapitalize="characters" placeholder="optional"></label>
+          <label class="field">Expected date (optional)<input id="del-expected" type="date"></label>
+          <button id="btn-del-add" class="primary">Add delivery</button>
+        </details>
+        <ul id="del-list" class="list"></ul>
+      </div>
 
       <h3>Documents</h3>
       <div class="card">

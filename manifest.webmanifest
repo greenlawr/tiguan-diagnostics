@@ -5,5 +5,16 @@
   "display": "standalone",
   "background_color": "#f3f5f8",
   "theme_color": "#0b6bcb",
-  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }],
+  "share_target": {
+    "action": "./",
+    "method": "GET",
+    "params": { "title": "title", "text": "text", "url": "url" }
+  },
+  "shortcuts": [
+    { "name": "Add fuel", "url": "./?action=fuel" },
+    { "name": "Where's my car?", "url": "./?action=park" },
+    { "name": "Add document", "url": "./?action=doc" },
+    { "name": "Add delivery", "url": "./?action=delivery" }
+  ]
 }
