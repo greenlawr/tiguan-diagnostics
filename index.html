@@ -35,8 +35,19 @@
   </header>
 
   <main>
+    <!-- Home hub -->
+    <section id="tab-home" class="tab active">
+      <div id="dashboard"></div>
+      <div id="home-tiles" class="tiles"></div>
+    </section>
+
     <!-- Check -->
-    <section id="tab-check" class="tab active">
+    <section id="tab-check" class="tab">
+      <div class="row" style="margin-bottom:12px">
+        <button class="nav-pill" data-go="check">Diagnostics</button>
+        <button class="nav-pill" data-go="live">Live data</button>
+        <button class="nav-pill" data-go="trips">Trips</button>
+      </div>
       <div id="unsupported" class="card note-card" hidden>
         <strong>This browser cannot use Bluetooth.</strong>
         Open this page in Chrome on an Android phone to connect to your car. You can still try the demo car below.
@@ -161,9 +172,7 @@
 
     <!-- Life admin: documents & renewals vault -->
     <section id="tab-life" class="tab">
-      <div id="dashboard"></div>
-
-      <h3>Deliveries</h3>
+      <h3 id="sec-deliveries">Deliveries</h3>
       <div class="card">
         <p class="muted small">Add a parcel to see it on your dashboard with a link to the courier's live tracking. Tip: from Amazon or an email, tap Share → My Life to add it quickly.</p>
         <details class="inner-form" id="del-form">
@@ -179,7 +188,7 @@
         <ul id="del-list" class="list"></ul>
       </div>
 
-      <h3>Documents</h3>
+      <h3 id="sec-documents">Documents</h3>
       <div class="card">
         <h2>Documents &amp; reminders</h2>
         <p class="muted">Keep track of anything with an expiry date — passport, driving licence, insurance, warranties, subscriptions. Add a photo if you like. Everything stays on this phone.</p>
@@ -209,7 +218,7 @@
       </div>
       <div id="docs-out"></div>
 
-      <h3>Utilities</h3>
+      <h3 id="sec-utilities">Utilities</h3>
       <div class="card">
         <p class="muted small">Store your plans so you get a nudge before each renewal — that's when switching saves the most.</p>
         <details class="inner-form" id="util-form">
@@ -230,7 +239,7 @@
         <ul id="util-list" class="list"></ul>
       </div>
 
-      <h3>Subscriptions</h3>
+      <h3 id="sec-subscriptions">Subscriptions</h3>
       <div class="card">
         <div id="subs-total" class="grid"></div>
         <details class="inner-form" id="subs-form">
@@ -246,7 +255,7 @@
         <ul id="subs-list" class="list"></ul>
       </div>
 
-      <h3>Tax &amp; money</h3>
+      <h3 id="sec-tax">Tax &amp; money</h3>
       <div class="card">
         <h2>Key dates</h2>
         <ul id="tax-dates" class="list"></ul>
@@ -267,7 +276,7 @@
         <div id="pension-bar" class="status"></div>
       </div>
 
-      <h3>Home</h3>
+      <h3 id="sec-home">Home</h3>
       <div class="card">
         <h2>Contents inventory</h2>
         <p class="muted small">A record of valuables for an insurance claim. Serial numbers and photos make claims far easier.</p>
@@ -310,7 +319,7 @@
         <ul id="maint-list" class="list"></ul>
       </div>
 
-      <h3>Health</h3>
+      <h3 id="sec-health">Health</h3>
       <div class="card">
         <h2>Check-ups</h2>
         <p class="muted small">Enter when you last went and how often; it works out when you're next due.</p>
@@ -337,7 +346,7 @@
         <label class="field">Emergency contact<input id="emg-contact" type="text" placeholder="name &amp; number"></label>
       </div>
 
-      <h3>Loyalty cards</h3>
+      <h3 id="sec-loyalty">Loyalty cards</h3>
       <div class="card">
         <p class="muted small">Keep your loyalty-card numbers here so you're never without them at the till.</p>
         <details class="inner-form" id="loyal-form">
@@ -369,13 +378,13 @@
         </div>
       </div>
 
-      <h3>Sharing</h3>
+      <h3 id="sec-sharing">Sharing</h3>
       <div class="card">
         <p class="muted small">Add a partner's email to turn reminders into calendar invites you both get.</p>
         <label class="field">Partner's email<input id="partner-email" type="email" autocapitalize="off" placeholder="e.g. jess@example.com"></label>
       </div>
 
-      <h3>Shopping &amp; to-do list</h3>
+      <h3 id="sec-shopping">Shopping &amp; to-do list</h3>
       <div class="card" id="shared-card">
         <p class="muted small" id="shared-hint">Add anything — shopping, jobs, reminders. Tick items off when they're done. Connect with your partner below to share this list between your phones.</p>
         <div class="row">
@@ -410,6 +419,11 @@
 
     <!-- Trips -->
     <section id="tab-trips" class="tab">
+      <div class="row" style="margin-bottom:12px">
+        <button class="nav-pill" data-go="check">Diagnostics</button>
+        <button class="nav-pill" data-go="live">Live data</button>
+        <button class="nav-pill" data-go="trips">Trips</button>
+      </div>
       <div class="card">
         <h2>Trip &amp; fuel economy</h2>
         <p class="muted">Start this before you drive and leave the phone connected. It tracks your distance, speed and real-world fuel economy for the journey.</p>
@@ -433,6 +447,11 @@
 
     <!-- Live -->
     <section id="tab-live" class="tab">
+      <div class="row" style="margin-bottom:12px">
+        <button class="nav-pill" data-go="check">Diagnostics</button>
+        <button class="nav-pill" data-go="live">Live data</button>
+        <button class="nav-pill" data-go="trips">Trips</button>
+      </div>
       <div class="card">
         <h2>Live readings</h2>
         <p class="muted">Watch what the car's sensors are reporting right now. Each one says what it means and whether it looks normal.</p>
@@ -552,11 +571,9 @@
   </main>
 
   <nav class="tabs" aria-label="Sections">
-    <button data-tab="check" class="active">Check</button>
+    <button data-tab="home" class="active">Home</button>
     <button data-tab="car">Car</button>
     <button data-tab="life">Life</button>
-    <button data-tab="live">Live</button>
-    <button data-tab="trips">Trips</button>
     <button data-tab="help">Help</button>
   </nav>
 

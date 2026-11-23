@@ -281,6 +281,20 @@ h3 { margin-top: 18px; }
 .lock-box textarea { width: 100%; font: inherit; color: var(--text); background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px; margin-bottom: 12px; }
 .rec-text { white-space: pre-wrap; word-break: break-word; font: inherit; font-size: 14px; margin: 8px 0 0; color: var(--text); }
 
+/* Home hub tiles */
+.tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.tile-btn {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 8px;
+  width: 100%; text-align: left;
+  background: var(--card); border: 1px solid var(--line); border-radius: 16px;
+  padding: 16px; min-height: 104px; position: relative;
+}
+.tile-btn .tile-icon { font-size: 28px; line-height: 1; }
+.tile-btn .tile-label { font-weight: 600; font-size: 15px; }
+.tile-btn .tag { position: absolute; top: 12px; right: 12px; }
+.nav-pill { flex: 1; min-width: 0; min-height: 42px; padding: 8px 6px; border-radius: 999px; font-size: 14px; font-weight: 600; }
+.nav-pill.current { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+
 /* Trip stats + charts */
 .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-bottom: 12px; }
 .tile { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px; }

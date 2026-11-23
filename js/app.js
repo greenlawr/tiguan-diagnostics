@@ -74,16 +74,25 @@ function friendly(e) {
   return m;
 }
 
-// ---------- tabs ----------
-document.querySelectorAll('.tabs button').forEach((btn) => {
-  btn.addEventListener('click', () => {
-    document.querySelectorAll('.tabs button').forEach((b) => b.classList.toggle('active', b === btn));
-    document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('active', t.id === 'tab-' + btn.dataset.tab));
-    if (btn.dataset.tab !== 'live') stopLive();
-    if (btn.dataset.tab === 'help') renderLog();
-    window.scrollTo(0, 0);
-  });
-});
+// ---------- navigation ----------
+function showTab(name) {
+  document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('active', t.id === 'tab-' + name));
+  document.querySelectorAll('.tabs button').forEach((b) => b.classList.toggle('active', b.dataset.tab === name));
+  document.querySelectorAll('.nav-pill').forEach((b) => b.classList.toggle('current', b.dataset.go === name));
+  if (name !== 'live') stopLive();
+  if (name === 'help') renderLog();
+  if (name === 'home') renderHome();
+  // The connection pill only matters on the car screens.
+  $('conn').style.display = ['check', 'live', 'trips'].includes(name) || elm ? '' : 'none';
+  window.scrollTo(0, 0);
+}
+document.querySelectorAll('.tabs button').forEach((btn) => btn.addEventListener('click', () => showTab(btn.dataset.tab)));
+document.querySelectorAll('.nav-pill').forEach((btn) => btn.addEventListener('click', () => showTab(btn.dataset.go)));
+// Open the Life tab and scroll to a named section.
+function goLife(section) {
+  showTab('life');
+  requestAnimationFrame(() => $('sec-' + section)?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+}
 
 // ---------- connection ----------
 function setConnected(connected, label = '') {
@@ -1032,6 +1041,37 @@ function greeting() {
   return h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening';
 }
 
+const HOME_TILES = [
+  { icon: '🩺', label: 'Car check', go: () => showTab('check') },
+  { icon: '🚗', label: 'My car', go: () => showTab('car') },
+  { icon: '🛒', label: 'Shopping list', go: () => goLife('shopping'), badge: () => { const n = Object.values(store.load(SHARED_KEY, {})).filter((i) => !i.deleted && !i.done).length; return n ? { text: String(n), cls: 'minor' } : null; } },
+  { icon: '📄', label: 'Documents', go: () => goLife('documents'), badge: () => { const soon = store.load(DOCS_KEY, []).filter((d) => d.expiry && countdown(d.expiry, '').days <= 30).length; return soon ? { text: String(soon), cls: 'soon' } : null; } },
+  { icon: '⚡', label: 'Utilities', go: () => goLife('utilities'), badge: () => { const soon = store.load(UTIL_KEY, []).filter((u) => u.renewal && countdown(u.renewal, '').days <= 30).length; return soon ? { text: String(soon), cls: 'soon' } : null; } },
+  { icon: '💷', label: 'Money & tax', go: () => goLife('tax') },
+  { icon: '🏠', label: 'Home', go: () => goLife('home') },
+  { icon: '❤️', label: 'Health', go: () => goLife('health') },
+  { icon: '📦', label: 'Deliveries', go: () => goLife('deliveries'), badge: () => { const n = store.load(DELIVERIES_KEY, []).filter((d) => !d.done).length; return n ? { text: String(n), cls: 'minor' } : null; } },
+  { icon: '💳', label: 'Loyalty', go: () => goLife('loyalty') },
+  { icon: '⛽', label: 'Trips', go: () => showTab('trips') },
+  { icon: '⚙️', label: 'Settings', go: () => showTab('help') },
+];
+function renderTiles() {
+  const grid = $('home-tiles');
+  if (!grid) return;
+  grid.replaceChildren();
+  for (const t of HOME_TILES) {
+    const tile = el('button', { class: 'tile-btn' }, el('span', { class: 'tile-icon', text: t.icon }), el('span', { class: 'tile-label', text: t.label }));
+    const badge = t.badge && t.badge();
+    if (badge) tile.append(el('span', { class: 'tag ' + badge.cls, text: badge.text }));
+    tile.addEventListener('click', t.go);
+    grid.append(tile);
+  }
+}
+function renderHome() {
+  renderDashboard();
+  renderTiles();
+}
+
 function renderDashboard() {
   const out = $('dashboard');
   if (!out) return;
@@ -1855,7 +1895,7 @@ $('btn-change-pass').addEventListener('click', async () => {
 });
 
 // ---------- launch actions: share-to-app + home-screen shortcuts ----------
-const goTab = (name) => document.querySelector(`.tabs button[data-tab="${name}"]`)?.click();
+const goTab = (name) => showTab(name);
 function openDetails(id) {
   const d = $(id);
   if (d) {
@@ -1897,7 +1937,8 @@ function initAll() {
   renderDocs();
   renderDeliveries();
   initLifeSections();
-  renderDashboard();
+  renderHome();
+  $('conn').style.display = 'none'; // Home is the default screen
   refreshBiometricButtons();
   if (!bluetoothSupported()) {
     $('unsupported').hidden = false;
