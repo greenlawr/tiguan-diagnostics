@@ -1330,6 +1330,72 @@ function collectExtraReminders() {
   return items;
 }
 
+// Loyalty cards (with optional camera scan to capture the number)
+const LOYAL_KEY = 'tiguan-loyalty';
+function renderLoyalty() {
+  const cards = store.load(LOYAL_KEY, []);
+  const out = $('loyal-list');
+  out.replaceChildren();
+  for (const c of cards) {
+    const card = el('div', { class: 'card' },
+      el('div', { class: 'line' }, el('div', { class: 'name', text: c.name }), (() => { const d = el('button', { class: 'del', text: '✕' }); d.addEventListener('click', () => { store.save(LOYAL_KEY, cards.filter((x) => x.id !== c.id)); renderLoyalty(); }); return d; })()),
+      el('div', { class: 'loyal-number', text: c.number })
+    );
+    out.append(card);
+  }
+  if (!cards.length) out.append(el('p', { class: 'muted small', text: 'No cards saved.' }));
+}
+$('btn-loyal-add').addEventListener('click', () => {
+  const name = $('loyal-name').value.trim();
+  const number = $('loyal-number').value.trim();
+  if (!name || !number) return alert('Add both a name and a number.');
+  store.save(LOYAL_KEY, [{ id: Date.now(), name, number }, ...store.load(LOYAL_KEY, [])]);
+  $('loyal-name').value = ''; $('loyal-number').value = '';
+  renderLoyalty();
+});
+
+let scanStream = null;
+function stopScan() {
+  if (scanStream) scanStream.getTracks().forEach((t) => t.stop());
+  scanStream = null;
+  $('scan-modal').hidden = true;
+}
+$('scan-cancel').addEventListener('click', stopScan);
+$('btn-loyal-scan').addEventListener('click', async (e) => {
+  e.preventDefault();
+  if (!('BarcodeDetector' in window)) {
+    alert('This phone/browser can\'t scan barcodes here. Type the number in instead.');
+    return;
+  }
+  try {
+    const detector = new window.BarcodeDetector();
+    scanStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+    const video = $('scan-video');
+    video.srcObject = scanStream;
+    await video.play();
+    $('scan-msg').textContent = 'Scanning…';
+    $('scan-modal').hidden = false;
+    const tick = async () => {
+      if (!scanStream) return;
+      try {
+        const codes = await detector.detect(video);
+        if (codes.length) {
+          $('loyal-number').value = codes[0].rawValue;
+          stopScan();
+          return;
+        }
+      } catch {
+        /* keep trying */
+      }
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  } catch {
+    stopScan();
+    alert('Could not open the camera. Allow camera access, or type the number in.');
+  }
+});
+
 function initLifeSections() {
   renderUtilities();
   renderSubs();
@@ -1340,6 +1406,7 @@ function initLifeSections() {
   renderMeters();
   renderMaint();
   renderCheckups();
+  renderLoyalty();
   initEmergency();
 }
 

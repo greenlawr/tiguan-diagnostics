@@ -330,6 +330,28 @@
         <label class="field">Emergency contact<input id="emg-contact" type="text" placeholder="name &amp; number"></label>
       </div>
 
+      <h3>Loyalty cards</h3>
+      <div class="card">
+        <p class="muted small">Keep your loyalty-card numbers here so you're never without them at the till.</p>
+        <details class="inner-form" id="loyal-form">
+          <summary>Add a card</summary>
+          <label class="field">Shop / card<input id="loyal-name" type="text" placeholder="e.g. Tesco Clubcard"></label>
+          <label class="field">Card number<input id="loyal-number" type="text" inputmode="numeric" autocapitalize="characters"></label>
+          <button id="btn-loyal-scan">Scan the barcode</button>
+          <button id="btn-loyal-add" class="primary">Save card</button>
+        </details>
+        <div id="loyal-list"></div>
+      </div>
+
+      <div id="scan-modal" class="lock" hidden>
+        <div class="lock-box">
+          <h2>Point the camera at the barcode</h2>
+          <video id="scan-video" playsinline style="width:100%;border-radius:12px;background:#000"></video>
+          <p id="scan-msg" class="status"></p>
+          <button id="scan-cancel" class="primary big">Cancel</button>
+        </div>
+      </div>
+
       <h3>Sharing</h3>
       <div class="card">
         <p class="muted small">Add a partner's email to turn reminders into calendar invites you both get.</p>
