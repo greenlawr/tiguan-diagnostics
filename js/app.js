@@ -26,6 +26,7 @@ import { savePhoto, loadPhoto, deletePhoto, exportAllPhotos, importAllPhotos } f
 import { parseImport, importCount } from './import.js';
 import { icon, TILE_ICON, SEC_ICON_NAME } from './icons.js';
 import { tripChecks, tripStatus, tripCalendarRows, timeline, matchTrip, countryCode, countryName, flag, daysBetween, BOOKING_KINDS, adviceSlug } from './travel.js';
+import { BILL_TYPES, BILL_ICON, CAN_SWITCH, COMPARE_LINKS, contractNudge, priceChange, councilTax, POLICY_KINDS, policyLabel, policyIcon, guessPolicyKind, INSURANCE_COMPARE, policyNudge } from './bills.js';
 import { makeInboxKeys, newInboxId, unseal, inboxAddress } from './inbox.js';
 import { capFor, nextCap, tariffCost, compareTariffs, yearlyFromReadings, TYPICAL, REGIONS } from './energy.js';
 import { uploadSharedFile, downloadSharedFile, deleteSharedFile, savePrivateFile, loadPrivateFile, deletePrivateFile, exportPrivateFiles, importPrivateFiles, checkFileSize } from './files.js';
@@ -225,6 +226,14 @@ window.addEventListener('popstate', () => {
 // ----- Life tab as a focused hub-and-spoke -----
 const SEC_ICON = { deliveries: '📦', documents: '📄', utilities: '⚡', subscriptions: '🔁', tax: '💷', home: '🏠', health: '❤️', loyalty: '💳', sharing: '📅', shopping: '🛒' };
 let pendingLifeSection = null;
+const LIFE_GROUPS = [
+  ['Today', ['calendar', 'shopping', 'tasks', 'deliveries', 'trains']],
+  ['Home', ['utilities', 'insurance', 'home', 'emergency']],
+  ['Family', ['family', 'health', 'travel']],
+  ['Money', ['tax', 'subscriptions', 'bills', 'loyalty']],
+  ['Documents', ['documents']],
+  ['Settings', ['sharing']],
+];
 function initLifeNav() {
   const tab = $('tab-life');
   const back = el('div', { id: 'life-back', class: 'life-back', hidden: '' });
@@ -232,12 +241,23 @@ function initLifeNav() {
   backBtn.addEventListener('click', () => showLifeSection(null));
   back.append(backBtn, el('span', { id: 'life-back-title', class: 'name' }));
 
-  const menu = el('div', { id: 'life-menu', class: 'tiles' });
-  for (const h of tab.querySelectorAll(':scope > h3[id^="sec-"]')) {
-    const name = h.id.slice(4);
-    const btn = el('button', { class: 'tile-btn' }, icon(SEC_ICON_NAME[name] || 'doc'), el('span', { class: 'tile-label', text: h.textContent }));
-    btn.addEventListener('click', () => { haptic(); showLifeSection(name); });
-    menu.append(btn);
+  // The menu is grouped: what you use daily, the house, the family, money, papers, settings.
+  const menu = el('div', { id: 'life-menu' });
+  const heads = Object.fromEntries([...tab.querySelectorAll(':scope > h3[id^="sec-"]')].map((h) => [h.id.slice(4), h.textContent]));
+  const placed = new Set();
+  const groups = LIFE_GROUPS.map(([title, names]) => [title, names.filter((n) => heads[n])]);
+  const rest = Object.keys(heads).filter((n) => !LIFE_GROUPS.some(([, names]) => names.includes(n)));
+  if (rest.length) groups.push(['More', rest]);
+  for (const [title, names] of groups) {
+    if (!names.length) continue;
+    const tiles = el('div', { class: 'tiles' });
+    for (const name of names) {
+      placed.add(name);
+      const btn = el('button', { class: 'tile-btn' }, icon(SEC_ICON_NAME[name] || 'doc'), el('span', { class: 'tile-label', text: heads[name] }));
+      btn.addEventListener('click', () => { haptic(); showLifeSection(name); });
+      tiles.append(btn);
+    }
+    menu.append(el('h4', { class: 'menu-group', text: title }), tiles);
   }
   tab.prepend(menu);
   tab.insertBefore(back, menu);
@@ -1319,7 +1339,8 @@ const HOME_TILES = [
   { icon: '✅', label: 'To-do list', go: () => goLife('tasks'), badge: () => { const n = sharedItems('task').filter((i) => !i.done).length; return n ? { text: String(n), cls: 'minor' } : null; } },
   { icon: '📦', label: 'Deliveries', go: () => goLife('deliveries'), badge: () => { const n = sharedItems('delivery').filter((d) => !d.done).length; return n ? { text: String(n), cls: 'minor' } : null; } },
   { icon: '📄', label: 'Documents', go: () => goLife('documents'), badge: () => { const soon = store.load(DOCS_KEY, []).filter((d) => d.expiry && countdown(d.expiry, '').days <= 30).length; return soon ? { text: String(soon), cls: 'soon' } : null; } },
-  { icon: '⚡', label: 'Utilities', go: () => goLife('utilities'), badge: () => { const soon = utilities().filter((u) => { const cd = u.renewal && countdown(u.renewal, ''); return cd && cd.days >= 0 && cd.days <= 30; }).length; return soon ? { text: String(soon), cls: 'soon' } : null; } },
+  { icon: '🛡️', label: 'Insurance', go: () => goLife('insurance'), badge: () => { const n = policies().filter((p) => { const cd = p.renewal && countdown(p.renewal, ''); return cd && cd.days <= 30; }).length; return n ? { text: String(n), cls: 'soon' } : null; } },
+  { icon: '⚡', label: 'Bills & suppliers', go: () => goLife('utilities'), badge: () => { const soon = utilities().filter((u) => { const cd = u.renewal && countdown(u.renewal, ''); return cd && cd.days >= 0 && cd.days <= 30; }).length; return soon ? { text: String(soon), cls: 'soon' } : null; } },
   { icon: '💷', label: 'Money & tax', go: () => goLife('tax') },
   { icon: '🏠', label: 'Home', go: () => goLife('home') },
   { icon: '❤️', label: 'Health', go: () => goLife('health') },
@@ -1756,7 +1777,7 @@ $('btn-doc-add').addEventListener('click', async () => {
 const UTIL_KEY = 'tiguan-utilities';
 // Utility plans live in the shared space so both phones see the suppliers (and the meter readings under them).
 // (The plan's service — Energy, Water… — is stored as `service`, since `type` marks the kind of shared item.)
-const utilities = () => sharedItems('utility').map((u) => ({ ...u, type: u.service || 'Other' }));
+const utilities = () => sharedItems('utility').map((u) => ({ ...u, type: u.service === 'TV / streaming' ? 'TV' : u.service || 'Other' }));
 const SUBS_KEY = 'tiguan-subscriptions';
 const INV_KEY = 'tiguan-inventory';
 const METER_KEY = 'tiguan-meters';
@@ -1778,10 +1799,17 @@ function renderUtilities() {
   list.replaceChildren();
   for (const u of [...items].sort((a, b) => (a.renewal || '9') < (b.renewal || '9') ? -1 : 1)) {
     const cd = u.renewal ? countdown(u.renewal, u.type) : null;
-    const sub = [u.provider, u.cost ? money(u.cost) + '/mo' : null].filter(Boolean).join(' · ');
+    const ct = u.type === 'Council tax' ? councilTax(u.annual, u.instalments) : null;
+    const sub = ct ? [u.provider, `${money(u.annual)} a year`, `${ct.instalments} × ${money(ct.instalment)}`].filter(Boolean).join(' · ')
+      : [u.provider, u.cost ? money(u.cost) + '/mo' : null, u.speed ? `${u.speed} Mbps` : null, u.handset ? HANDSET_LABEL[u.handset] : null].filter(Boolean).join(' · ');
+    const title = `${BILL_ICON[u.type] || '🧾'} ${u.type === 'TV' ? 'TV & streaming' : u.type}${u.type === 'Mobile' && u.who ? ' — ' + u.who : ''}${u.type === 'Council tax' && u.band ? ` (band ${u.band})` : ''}`;
+    const passed = cd && cd.days < 0 && CAN_SWITCH.has(u.type);
     const row = el('div', { class: 'card doc' }, el('div', { class: 'line' },
-      el('div', {}, el('div', { class: 'name', text: u.type }), el('div', { class: 'sub', text: sub })),
-      cd ? el('span', { class: 'tag ' + cd.level, text: cd.text.replace(u.type + ' ', '') }) : null));
+      el('div', {}, el('div', { class: 'name', text: title }), el('div', { class: 'sub', text: sub })),
+      cd && CAN_SWITCH.has(u.type) ? el('span', { class: 'tag ' + (passed ? 'soon' : cd.level), text: passed ? 'out of contract' : cd.days <= 60 ? `ends in ${cd.days} days` : `ends ${fmtDate(u.renewal)}` } ) : null));
+    const nudge = contractNudge(u, todayISO());
+    if (nudge) row.append(el('div', { class: 'state-note small ' + nudge.level, style: 'margin-top:8px', text: nudge.text }));
+    if (u.priceRise && ['Broadband', 'Mobile', 'TV'].includes(u.type)) row.append(el('div', { class: 'sub', style: 'margin-top:6px', text: `Goes up ${money(u.priceRise)} a month each April (it’s in the contract).` }));
     if (u.tariff || u.usage) {
       row.append(el('div', { class: 'sub', style: 'margin-top:6px', text: [u.tariff, u.usage].filter(Boolean).join(' · ') }));
     }
@@ -1793,8 +1821,11 @@ function renderUtilities() {
       cmp.addEventListener('click', () => openEnergyCompare(u.id));
       actions.append(cmp);
     }
+    const editBtn = el('button', { text: 'Edit' });
+    editBtn.addEventListener('click', () => openSupplierEditor(u));
+    actions.append(editBtn);
     const rec = el('button', { text: 'Ask Claude' });
-    if (u.type === 'Water') rec.hidden = true; // you can't switch water supplier
+    if (!CAN_SWITCH.has(u.type)) rec.hidden = true; // water and council tax can't be switched
     rec.addEventListener('click', async () => {
       const text = utilityBrief(u);
       try {
@@ -1804,9 +1835,10 @@ function renderUtilities() {
     });
     actions.append(rec);
     const saveRec = el('button', { text: u.recommendation ? 'Update options' : 'Save options' });
+    if (!CAN_SWITCH.has(u.type)) saveRec.hidden = true;
     saveRec.addEventListener('click', () => openRecModal(u.id));
     actions.append(saveRec);
-    if (COMPARE[u.type]) actions.append(el('a', { class: 'btn-a', href: COMPARE[u.type], target: '_blank', rel: 'noopener', text: 'Compare site' }));
+    for (const [label, href] of COMPARE_LINKS[u.type] || []) actions.append(el('a', { class: 'btn-a', href, target: '_blank', rel: 'noopener', text: label }));
     if (u.renewal) actions.append(el('a', { class: 'btn-a', href: calendarEvent(`${u.type} renewal${u.provider ? ' – ' + u.provider : ''}`, u.renewal, { guests: partnerEmail() }), target: '_blank', rel: 'noopener', text: 'Remind me' }));
     const del = el('button', { class: 'del', text: '✕' });
     del.addEventListener('click', () => {
@@ -1866,17 +1898,15 @@ function utilityBrief(u) {
     `Current provider: ${u.provider || '(not set)'}`,
     u.tariff ? `Tariff: ${u.tariff}` : null,
     u.cost ? `Paying: £${u.cost}/month (about £${Math.round(u.cost * 12)}/year)` : null,
-    u.usage ? `My usage: ${u.usage}` : null,
+    u.usage ? `My usage / package: ${u.usage}` : null,
+    u.speed ? `Speed: about ${u.speed} Mbps` : null,
+    u.type === 'Mobile' && u.handset ? `Phone: ${HANDSET_LABEL[u.handset]}` : null,
+    u.priceRise ? `Annual price rise: £${u.priceRise}/month each April` : null,
     u.renewal ? `Contract ends / renews: ${fmtDate(u.renewal)}` : null,
     'Please find current deals that beat this and recommend the best value, flagging any exit fees or switching catches.',
   ].filter(Boolean).join('\n');
 }
-$('btn-util-add').addEventListener('click', () => {
-  sharedAdd('utility', { service: $('util-type').value, provider: $('util-provider').value.trim(), tariff: $('util-tariff').value.trim(), cost: parseFloat($('util-cost').value) || 0, renewal: $('util-renewal').value, usage: $('util-usage').value.trim() });
-  scheduleSync();
-  for (const id of ['util-provider', 'util-tariff', 'util-cost', 'util-renewal', 'util-usage']) $(id).value = '';
-  renderUtilities(); renderDashboard(); toast('Plan added ✓');
-});
+
 
 // Subscriptions
 function renderSubs() {
@@ -1909,7 +1939,7 @@ const CAT_COLOR = { Subscriptions: 'var(--accent)', Utilities: 'var(--soon)' };
 function renderMoneyOverview() {
   const out = $('money-overview');
   if (!out) return;
-  const m = moneyOverview(store.load(SUBS_KEY, []), utilities());
+  const m = moneyOverview(store.load(SUBS_KEY, []), utilities(), policies());
   out.replaceChildren(el('h2', { text: 'Your outgoings' }));
   if (!m.items.length) {
     out.append(el('p', { class: 'muted small', text: 'Add your subscriptions and utility plans and your monthly spend appears here.' }));
@@ -2182,7 +2212,20 @@ function nextRenewal(sub) {
 function collectExtraReminders() {
   const items = [];
   const add = (date, label, sub) => { const cd = date ? countdown(date, label) : null; if (cd) items.push({ label, sub, days: cd.days, level: cd.level, text: cd.text }); };
-  for (const u of utilities()) add(u.renewal, u.type + (u.provider ? ' (' + u.provider + ')' : ''), 'Utilities');
+  const todayR = todayISO();
+  for (const u of utilities()) {
+    const name = `${u.type === 'TV' ? 'TV' : u.type}${u.type === 'Mobile' && u.who ? ' — ' + u.who : ''}${u.provider ? ' (' + u.provider + ')' : ''}`;
+    if (u.renewal && u.renewal < todayR && CAN_SWITCH.has(u.type)) {
+      const n = contractNudge(u, todayR);
+      if (n && n.level === 'urgent') items.push({ label: name, sub: 'Bills · ' + n.text, days: 0, level: 'urgent', text: u.type === 'Mobile' ? 'switch to SIM-only' : 'switch', go: () => goLife('utilities') });
+      continue; // out of contract: shown on the bill itself, not as an overdue date
+    }
+    add(u.renewal, name, 'Bills');
+  }
+  for (const p of policies()) {
+    if (p.kind === 'car' || !p.renewal) continue; // the car's insurance shows with the car's dates
+    add(p.renewal, `${policyLabel(p.kind)} insurance${p.insurer ? ' (' + p.insurer + ')' : ''}`, 'Insurance');
+  }
   for (const s of store.load(SUBS_KEY, [])) add(nextRenewal(s), s.name, 'Subscription');
   for (const m of store.load(MAINT_KEY, [])) add(m.date, m.task, 'Home');
   for (const c of store.load(CHECK_KEY, [])) add(nextDue(c.last, c.interval), c.type, 'Health');
@@ -2198,7 +2241,7 @@ function collectExtraReminders() {
     const until = daysBetween(today, t.start);
     if (until >= 0 && until <= 14) items.push({ label: `${tripFlag(t)} ${t.title || 'Trip'}`, sub: 'Travel', days: until, level: until <= 2 ? 'soon' : 'ok', text: until === 0 ? 'leaving today' : until === 1 ? 'leaving tomorrow' : `in ${until} days`, go: () => openTrip(t.id) });
     // One row per trip ("3 things to sort"), not one per check, so Home stays calm.
-    const checks = tripChecks(t, children(), today).filter((c) => !(c.level === 'info' && until > 60));
+    const checks = tripChecks(t, children(), today, { hasInsurance: annualTravelCover(t) }).filter((c) => !(c.level === 'info' && until > 60));
     if (checks.length) {
       const heads = [...new Set(checks.map((c) => ({ passport: 'passport', auth: 'travel authorisation', ghic: 'GHIC', insurance: 'insurance', checkin: 'online check-in', advice: 'entry rules' }[c.kind] || 'check')))];
       items.push({ label: `${tripFlag(t)} ${t.title || 'Trip'}: ${checks.length === 1 ? '1 thing' : checks.length + ' things'} to sort`, sub: 'Travel · ' + heads.join(', '), days: Math.max(0, until), level: checks.some((c) => c.level === 'urgent') ? 'urgent' : 'soon', text: until > 0 ? `trip in ${until}d` : 'now', go: () => openTrip(t.id) });
@@ -2354,15 +2397,15 @@ function scheduleSync() {
 const TOMBSTONE_DAYS = 60;
 let syncPromise = null;
 // Things worth a "Jess added…" note (not calendar-feed events, meter readings or housekeeping).
-const NOTIFY_TYPES = ['shop', 'task', 'bill', 'delivery', 'event', 'trip', 'child', 'utility'];
+const NOTIFY_TYPES = ['shop', 'task', 'bill', 'delivery', 'event', 'trip', 'child', 'utility', 'policy'];
 const notable = (it) => it && !it.deleted && NOTIFY_TYPES.includes(it.type || 'shop') && !(it.type === 'event' && it.src);
 let knownIds = null; // shared items this phone has already seen
 function sharedLabel(it) {
   const t = it.type || 'shop';
   const name = it.text || it.title || it.name || it.item || it.service || '';
-  return { shop: name, task: name, bill: name ? `bill: ${name}` : 'a bill', delivery: name ? `parcel: ${name}` : 'a parcel', event: name, trip: name ? `trip: ${name}` : 'a trip', child: name ? `${name} (Family)` : 'family details', utility: name ? `${name} (Utilities)` : 'a utility' }[t] || name;
+  return { shop: name, task: name, bill: name ? `bill: ${name}` : 'a bill', delivery: name ? `parcel: ${name}` : 'a parcel', event: name, trip: name ? `trip: ${name}` : 'a trip', child: name ? `${name} (Family)` : 'family details', utility: name ? `${name} (Bills)` : 'a bill', policy: `${policyLabel(it.kind)} insurance` }[t] || name;
 }
-const SECTION_FOR = { shop: 'shopping', task: 'tasks', bill: 'bills', delivery: 'deliveries', event: 'calendar', trip: 'travel', child: 'family', utility: 'utilities' };
+const SECTION_FOR = { shop: 'shopping', task: 'tasks', bill: 'bills', delivery: 'deliveries', event: 'calendar', trip: 'travel', child: 'family', utility: 'utilities', policy: 'insurance' };
 function syncNow() {
   if (!paired()) return Promise.resolve();
   if (syncPromise) return syncPromise;
@@ -2469,7 +2512,7 @@ function peopleOptions(sel, includeAnyone) {
   for (const n of [myName(), partnerName()]) sel.add(new Option(n, n));
   if (keep) sel.value = keep;
 }
-function renderSharedAll() { renderShared(); renderBills(); renderTasks(); renderDeliveries(); renderUtilities(); renderFamily(); renderTravel(); renderCalendar(); renderHome(); renderLost(); }
+function renderSharedAll() { renderShared(); renderBills(); renderTasks(); renderDeliveries(); renderUtilities(); renderFamily(); renderTravel(); renderPolicies(); renderHouse(); renderCalendar(); renderHome(); renderLost(); }
 
 // Shared bills with who-owes-whom
 function renderBills() {
@@ -3452,7 +3495,7 @@ function renderTravel() {
   }
 }
 function tripCard(t, today) {
-  const checks = tripChecks(t, children(), today);
+  const checks = tripChecks(t, children(), today, { hasInsurance: annualTravelCover(t) });
   const next = timeline(t).find((b) => b.when && b.when.slice(0, 10) >= today && b.kind !== 'insurance');
   const card = el('button', { class: 'card trip-card', type: 'button' },
     el('div', { class: 'trip-head' }, el('span', { class: 'trip-flag', text: tripFlag(t) }),
@@ -3484,7 +3527,7 @@ function openTrip(id) {
       ins.emergencyPhone ? el('div', {}, el('a', { href: 'tel:' + ins.emergencyPhone.replace(/[^\d+]/g, ''), text: ins.emergencyPhone })) : null,
       ins.policyNo ? el('div', { class: 'small' }, `${ins.provider || 'Policy'}: `, copyRow('Policy number', ins.policyNo)) : null));
   }
-  const checks = tripChecks(t, children(), today);
+  const checks = tripChecks(t, children(), today, { hasInsurance: annualTravelCover(t) });
   if (checks.length) {
     const list = el('ul', { class: 'trip-checks' });
     for (const c of checks) list.append(el('li', { class: c.level }, el('span', { text: c.text }), c.url ? el('a', { href: c.url, target: '_blank', rel: 'noopener', text: /nhs\.uk/.test(c.url) ? ' Apply on NHS.UK ›' : ' Check on GOV.UK ›' }) : null));
@@ -4182,6 +4225,239 @@ async function checkInbox(force = false) {
   } finally { inboxChecking = false; }
 }
 
+// ---------- Bills & suppliers: add / edit (energy, water, broadband, mobile, TV, council tax) ----------
+const BILL_FIELDS = {
+  common: [['provider', 'Provider', 'text', 'e.g. Octopus, BT, EE, Sky'], ['tariff', 'Plan / tariff', 'text', 'optional'], ['cost', 'Monthly cost (£)', 'number', 'optional'], ['renewal', 'Contract ends', 'date']],
+  Energy: [['usage', 'Your usage (optional)', 'text', 'e.g. 3,100 kWh electricity, 9,000 kWh gas a year']],
+  Electricity: [['usage', 'Your usage (optional)', 'text', 'e.g. 3,100 kWh a year']],
+  Gas: [['usage', 'Your usage (optional)', 'text', 'e.g. 9,000 kWh a year']],
+  Broadband: [['speed', 'Average speed (Mbps)', 'number', 'e.g. 150'], ['priceRise', 'Price rise each April (£ a month)', 'number', 'e.g. 3'], ['usage', 'Extras', 'text', 'e.g. landline, Wi-Fi boosters']],
+  Mobile: [['who', 'Whose phone', 'text', 'e.g. Jess'], ['usage', 'Allowance', 'text', 'e.g. 30GB, unlimited calls'], ['handset', 'Phone included in the contract?', 'select', ['', 'Yes — phone and airtime', 'No — SIM-only', 'Phone on a separate plan']], ['priceRise', 'Price rise each April (£ a month)', 'number', 'optional']],
+  TV: [['usage', 'Package / channels', 'text', 'e.g. Sky Signature + Netflix'], ['priceRise', 'Price rise each April (£ a month)', 'number', 'optional']],
+  'Council tax': [['band', 'Band', 'select', ['', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I']], ['annual', 'Bill for the year (£)', 'number', 'e.g. 2,400'], ['instalments', 'Instalments', 'select', ['10', '12']]],
+  Water: [], Other: [],
+};
+const HANDSET = { 'Yes — phone and airtime': 'included', 'No — SIM-only': 'sim', 'Phone on a separate plan': 'separate' };
+const HANDSET_LABEL = Object.fromEntries(Object.entries(HANDSET).map(([k, v]) => [v, k]));
+function openSupplierEditor(existing) {
+  const u = existing ? { ...existing } : {};
+  const typeSel = el('select', {}, ...BILL_TYPES.map((t) => el('option', { value: t, text: `${BILL_ICON[t]} ${t === 'TV' ? 'TV & streaming' : t === 'Energy' ? 'Energy (gas & electricity)' : t}` })));
+  typeSel.value = u.type && BILL_TYPES.includes(u.type) ? u.type : u.type === 'TV / streaming' ? 'TV' : 'Energy';
+  const box = el('div', {});
+  const inputs = {};
+  const draw = () => {
+    box.replaceChildren();
+    for (const k of Object.keys(inputs)) delete inputs[k];
+    const t = typeSel.value;
+    const fields = [...(t === 'Council tax' ? BILL_FIELDS.common.filter(([k]) => k === 'provider').map(([k]) => [k, 'Council', 'text', 'e.g. Dacorum Borough Council']) : BILL_FIELDS.common), ...(BILL_FIELDS[t] || [])];
+    for (const [k, label, type, ph] of fields) {
+      let input;
+      if (type === 'select') {
+        input = el('select', {}, ...ph.map((o) => el('option', { value: o, text: o || 'Choose…' })));
+        input.value = k === 'handset' ? (HANDSET_LABEL[u[k]] || '') : String(u[k] ?? (k === 'instalments' ? '10' : ''));
+      } else {
+        input = el('input', { type, autocomplete: 'off', ...(type === 'number' ? { inputmode: 'decimal', step: 'any' } : {}), ...(ph ? { placeholder: ph } : {}) });
+        input.value = u[k] ?? '';
+      }
+      inputs[k] = input;
+      box.append(el('label', { class: 'field' }, label, input));
+    }
+  };
+  typeSel.addEventListener('change', draw); draw();
+  const save = el('button', { class: 'primary', type: 'button', text: existing ? 'Save' : 'Add' });
+  save.addEventListener('click', () => {
+    const t = typeSel.value;
+    const data = { service: t };
+    for (const [k, input] of Object.entries(inputs)) {
+      const v = input.value.trim();
+      data[k] = k === 'handset' ? (HANDSET[v] || '') : ['cost', 'speed', 'priceRise', 'annual'].includes(k) ? (v === '' ? 0 : Number(v)) : v;
+    }
+    if (t === 'Council tax') { const ct = councilTax(data.annual, data.instalments); data.cost = ct ? ct.monthlyAverage : 0; }
+    if (!data.provider && t !== 'Council tax') { inputs.provider.focus(); return toast('Add the provider.'); }
+    if (existing) sharedUpdate(existing.id, data); else sharedAdd('utility', data);
+    scheduleSync(); closeSheet(); renderUtilities(); renderDashboard(); haptic();
+    toast(existing ? 'Saved ✓' : 'Added ✓');
+  });
+  const cancel = el('button', { type: 'button', text: 'Cancel' });
+  cancel.addEventListener('click', closeSheet);
+  openSheet(el('h2', { text: existing ? `Edit ${u.type}` : 'Add a bill or contract' }),
+    el('p', { class: 'muted small', text: 'Shared with your partner. Add the contract end date and Evergreen tells you when it’s time to haggle or switch.' }),
+    el('label', { class: 'field' }, 'What is it?', typeSel), box, el('div', { class: 'row' }, cancel, save));
+}
+$('btn-supplier-add')?.addEventListener('click', () => openSupplierEditor());
+
+// ---------- Insurance: every policy in one place ----------
+const POLICY_KEY = 'tiguan-policies'; // policies kept only on this phone
+function policies() {
+  return [...sharedItems('policy').map((p) => ({ ...p, shared: true })), ...store.load(POLICY_KEY, []).map((p) => ({ ...p, shared: false }))]
+    .sort((a, b) => ((a.renewal || '9') < (b.renewal || '9') ? -1 : 1));
+}
+function savePolicy(p, data, makeShared) {
+  if (p && p.shared && makeShared) return sharedUpdate(p.id, data);
+  if (p && !p.shared && !makeShared) return store.save(POLICY_KEY, store.load(POLICY_KEY, []).map((x) => (x.id === p.id ? { ...x, ...data } : x)));
+  // new, or moving between "shared" and "this phone only"
+  const full = { ...(p || {}), ...data };
+  delete full.shared; delete full.type; delete full.updatedAt; delete full.deleted;
+  if (p) { if (p.shared) sharedRemove(p.id); else store.save(POLICY_KEY, store.load(POLICY_KEY, []).filter((x) => x.id !== p.id)); }
+  if (makeShared) { const { id, ...rest } = full; sharedAdd('policy', rest); } else store.save(POLICY_KEY, [{ ...full, id: full.id || 'p' + uid() }, ...store.load(POLICY_KEY, [])]);
+}
+function policyBrief(p) {
+  return [`Please help me find a better ${policyLabel(p.kind).toLowerCase()} insurance deal (UK) before my renewal.`,
+    p.insurer ? `Current insurer: ${p.insurer}` : null, p.premium ? `Renewal price: £${p.premium} a year${p.lastPremium ? ` (last year £${p.lastPremium})` : ''}` : null,
+    p.excess ? `Excess: £${p.excess}` : null, p.covers ? `Cover: ${p.covers}` : null, p.renewal ? `Renews: ${fmtDate(p.renewal)}` : null,
+    'Suggest what to compare, typical prices and any catches. (Insurers can’t charge renewing customers more than new ones for home and car cover.)'].filter(Boolean).join('\n');
+}
+function renderPolicies() {
+  const out = $('policy-list');
+  if (!out) return;
+  out.replaceChildren();
+  const all = policies();
+  if (!all.length) { out.append(el('p', { class: 'muted small', text: 'No policies yet — add your home, car, pet, life and travel cover so renewals never sneak up on you.' })); return; }
+  const today = todayISO();
+  const yearly = all.reduce((s, p) => s + (Number(p.premium) || 0), 0);
+  if (yearly) out.append(el('p', { class: 'small', text: `All your cover: ${money(yearly)} a year (about ${money(yearly / 12)} a month).` }));
+  for (const p of all) {
+    const cd = p.renewal ? countdown(p.renewal, '') : null;
+    const pc = priceChange(p.premium, p.lastPremium);
+    const card = el('div', { class: 'card doc policy' },
+      el('div', { class: 'line' }, el('div', {},
+        el('div', { class: 'name', text: `${policyIcon(p.kind)} ${policyLabel(p.kind)}${p.insurer ? ' — ' + p.insurer : ''}` }),
+        el('div', { class: 'sub', text: [p.premium ? `${money(p.premium)} a year` : '', p.excess ? `excess ${money(p.excess)}` : '', p.covers, p.shared ? '' : 'only on this phone'].filter(Boolean).join(' · ') })),
+      cd ? el('span', { class: 'tag ' + cd.level, text: cd.days < 0 ? 'renewal passed' : `renews ${cd.days <= 60 ? 'in ' + cd.days + ' days' : fmtDate(p.renewal)}` }) : el('span', { class: 'tag dim', text: 'no date' })));
+    if (pc && pc.pct !== 0) card.append(el('div', { class: 'small', style: 'margin-top:6px' }, el('span', { class: 'tag ' + pc.level, text: pc.text }), ` (${pc.diff > 0 ? '+' : ''}${money(pc.diff)})`));
+    const n = policyNudge(p, today);
+    if (n) card.append(el('div', { class: 'state-note small ' + n.level, style: 'margin-top:8px', text: n.text }));
+    const dl = el('dl', { class: 'child-dl', style: 'margin-top:8px' });
+    if (p.policyNo) { const b = el('button', { class: 'child-copy', type: 'button', text: mask(p.policyNo) }); let shown = false; b.addEventListener('click', () => { if (!shown) { b.textContent = p.policyNo; shown = true; } else copyValue(p.policyNo, 'Policy number'); }); dl.append(el('dt', { text: 'Policy no.' }), el('dd', {}, b)); }
+    if (p.claimsPhone) dl.append(el('dt', { text: 'Claims line' }), el('dd', {}, el('a', { href: 'tel:' + p.claimsPhone.replace(/[^\d+]/g, ''), text: p.claimsPhone })));
+    if (dl.children.length) card.append(dl);
+    if (p.notes) card.append(el('p', { class: 'small child-notes', text: p.notes }));
+    const acts = el('div', { class: 'row', style: 'margin-top:10px' });
+    const edit = el('button', { type: 'button', text: 'Edit' }); edit.addEventListener('click', () => openPolicyEditor(p)); acts.append(edit);
+    if (INSURANCE_COMPARE[p.kind]) acts.append(el('a', { class: 'btn-a', href: INSURANCE_COMPARE[p.kind], target: '_blank', rel: 'noopener', text: 'Compare' }));
+    const ask = el('button', { type: 'button', text: 'Ask Claude' });
+    ask.addEventListener('click', async () => { const text = policyBrief(p); try { if (navigator.share) await navigator.share({ title: 'Insurance renewal', text }); else { await navigator.clipboard.writeText(text); toast('Copied — paste it to Claude'); } } catch { /* closed */ } });
+    acts.append(ask);
+    if (p.renewal) acts.append(el('a', { class: 'btn-a', href: calendarEvent(`${policyLabel(p.kind)} insurance renewal${p.insurer ? ' – ' + p.insurer : ''}`, p.renewal, { guests: partnerEmail() }), target: '_blank', rel: 'noopener', text: 'Remind me' }));
+    card.append(acts, p.shared
+      ? lazyFiles({ shared: true, hint: 'Policy schedule, certificate, terms.', get: () => sharedItems('policy').find((x) => x.id === p.id)?.files || [], save: (list) => { sharedUpdate(p.id, { files: list }); scheduleSync(); } })
+      : privateFiles(POLICY_KEY, p.id, 'Policy schedule, certificate, terms.'));
+    if (!p.shared && p.photoId) attachPhoto(card, p, policyLabel(p.kind));
+    out.append(card);
+  }
+}
+function openPolicyEditor(existing) {
+  const p = existing || { kind: 'home', shared: true };
+  const kind = el('select', {}, ...POLICY_KINDS.map(([v, l, i]) => el('option', { value: v, text: `${i} ${l}` })));
+  kind.value = p.kind || 'home';
+  const f = {};
+  const inp = (k, type = 'text', ph = '') => { const i = el('input', { type, autocomplete: 'off', ...(type === 'number' ? { inputmode: 'decimal', step: 'any' } : {}), placeholder: ph }); i.value = p[k] ?? ''; f[k] = i; return i; };
+  const auto = el('input', { type: 'checkbox' }); auto.checked = !!p.autoRenew;
+  const shared = el('input', { type: 'checkbox' }); shared.checked = p.shared !== false;
+  const notes = el('textarea', { rows: '2', placeholder: 'e.g. covers accidental damage; legal cover added' }); notes.value = p.notes || '';
+  const save = el('button', { class: 'primary', type: 'button', text: existing ? 'Save' : 'Add' });
+  save.addEventListener('click', () => {
+    const data = { kind: kind.value, notes: notes.value.trim(), autoRenew: auto.checked };
+    for (const [k, i] of Object.entries(f)) data[k] = ['premium', 'lastPremium', 'excess'].includes(k) ? (i.value === '' ? '' : Number(i.value)) : i.value.trim();
+    savePolicy(existing, data, shared.checked);
+    scheduleSync(); closeSheet(); renderPolicies(); renderDashboard(); syncCarInsurance(); haptic();
+    toast(existing ? 'Saved ✓' : 'Policy added ✓');
+  });
+  const cancel = el('button', { type: 'button', text: 'Cancel' }); cancel.addEventListener('click', closeSheet);
+  const nodes = [el('h2', { text: existing ? 'Edit policy' : 'Add a policy' }),
+    el('label', { class: 'field' }, 'Type of cover', kind),
+    el('label', { class: 'field' }, 'Insurer', inp('insurer', 'text', 'e.g. Aviva, Admiral, Petplan')),
+    el('label', { class: 'field' }, 'Policy number', inp('policyNo')),
+    el('label', { class: 'field' }, 'Claims / emergency phone', inp('claimsPhone', 'tel', 'e.g. 0800 …')),
+    el('div', { class: 'grid2' }, el('label', { class: 'field' }, 'Renews on', inp('renewal', 'date')), el('label', { class: 'field' }, 'Excess (£)', inp('excess', 'number'))),
+    el('div', { class: 'grid2' }, el('label', { class: 'field' }, 'Price this year (£/yr)', inp('premium', 'number')), el('label', { class: 'field' }, 'Last year (£/yr)', inp('lastPremium', 'number', 'to spot price creep'))),
+    el('label', { class: 'field' }, 'What / who it covers', inp('covers', 'text', 'e.g. VW Tiguan, both drivers')),
+    el('label', { class: 'check' }, auto, ' Renews automatically'),
+    el('label', { class: 'check' }, shared, ' Share with my partner (untick to keep it on this phone only)'),
+    el('label', { class: 'field' }, 'Notes', notes),
+    el('div', { class: 'row' }, cancel, save)];
+  if (existing) {
+    const del = el('button', { class: 'link', type: 'button', style: 'color:var(--urgent, #c0392b);margin-top:8px', text: 'Delete this policy' });
+    del.addEventListener('click', () => {
+      if (!confirm('Delete this policy?')) return;
+      if (existing.shared) { sharedRemove(existing.id); scheduleSync(); dropFiles(existing.files || []); } else deleteItem(POLICY_KEY, existing.id, renderPolicies, { photoId: existing.photoId, label: policyLabel(existing.kind) });
+      closeSheet(); renderPolicies(); renderDashboard();
+    });
+    nodes.push(del);
+  }
+  openSheet(...nodes);
+}
+$('btn-policy-add')?.addEventListener('click', () => openPolicyEditor());
+/** The car's insurance date (Car tab) comes from the Car policy here, so it's entered once. */
+function syncCarInsurance() {
+  const car = policies().filter((p) => p.kind === 'car' && p.renewal).sort((a, b) => (a.renewal < b.renewal ? -1 : 1))[0];
+  if (!car) return;
+  const v = loadVehicle();
+  if (v.insurance !== car.renewal) { saveVehicle({ ...v, insurance: car.renewal }); if ($('insurance-input')) $('insurance-input').value = car.renewal; }
+}
+/** Annual travel cover that runs past a trip counts as insurance for it. */
+const annualTravelCover = (trip) => policies().some((p) => p.kind === 'travel' && p.renewal && p.renewal >= (trip.end || trip.start));
+/** One-off: move insurance kept under Utilities or Documents into Insurance. */
+function migrateInsurance() {
+  let moved = 0;
+  for (const u of sharedItems('utility').filter((x) => x.service === 'Insurance')) {
+    sharedAdd('policy', { kind: guessPolicyKind([u.provider, u.tariff, u.usage].join(' ')), insurer: u.provider || '', premium: u.cost ? Math.round(u.cost * 12) : '', renewal: u.renewal || '', notes: [u.tariff, u.usage].filter(Boolean).join(' · '), files: u.files || [] });
+    sharedRemove(u.id); moved++;
+  }
+  const docs = store.load(DOCS_KEY, []);
+  const ins = docs.filter((d) => d.category === 'Insurance');
+  if (ins.length) {
+    store.save(POLICY_KEY, [...ins.map((d) => ({ id: 'p' + uid(), kind: guessPolicyKind(d.label + ' ' + (d.note || '')), insurer: '', renewal: d.expiry || '', notes: [d.label, d.note].filter(Boolean).join(' · '), files: d.files || [], photoId: d.photoId })), ...store.load(POLICY_KEY, [])]);
+    store.save(DOCS_KEY, docs.filter((d) => d.category !== 'Insurance'));
+    moved += ins.length;
+  }
+  if (moved) { scheduleSync(); renderDocs(); renderUtilities(); toast(`Moved ${moved} insurance ${moved === 1 ? 'entry' : 'entries'} into Home → Insurance`); }
+}
+
+// ---------- Household emergency info (shared) ----------
+const HOUSE_FIELDS = [
+  ['stopcock', 'Water stopcock', 'e.g. under the kitchen sink, left'], ['fusebox', 'Fuse box / consumer unit', 'e.g. cupboard under the stairs'],
+  ['gasmeter', 'Gas meter & shut-off', 'e.g. outside box by the front door'], ['elecmeter', 'Electricity meter', ''],
+  ['boiler', 'Boiler (make, model) & engineer', 'e.g. Worcester 30i — engineer Dave 07…'], ['water', 'Water company emergency line', 'e.g. Affinity Water 0345 …'],
+  ['keys', 'Spare keys are with', 'e.g. Sue at no. 12'], ['alarm', 'Alarm — where the code is kept', 'never the code itself'],
+  ['neighbours', 'Neighbours to call', 'names and numbers'], ['wifi', 'Wi-Fi name', 'the password stays in your password manager'],
+  ['bins', 'Bin days', 'e.g. Tues — black & blue alternate weeks'],
+];
+const HOUSE_ID = 'xhouse';
+const house = () => sharedItems('house')[0] || null;
+function renderHouse() {
+  const out = $('house-out');
+  if (!out) return;
+  const h = house() || {};
+  out.replaceChildren();
+  const dl = el('dl', { class: 'child-dl' });
+  for (const [k, label] of HOUSE_FIELDS) if (h[k]) dl.append(el('dt', { text: label }), el('dd', { text: h[k] }));
+  const homePolicy = policies().find((p) => ['home', 'buildings', 'contents'].includes(p.kind) && p.claimsPhone);
+  if (homePolicy) dl.append(el('dt', { text: 'Home insurance claims' }), el('dd', {}, el('a', { href: 'tel:' + homePolicy.claimsPhone.replace(/[^\d+]/g, ''), text: `${homePolicy.claimsPhone}${homePolicy.insurer ? ' (' + homePolicy.insurer + ')' : ''}` })));
+  const boilerPolicy = policies().find((p) => p.kind === 'boiler' && p.claimsPhone);
+  if (boilerPolicy) dl.append(el('dt', { text: 'Boiler cover' }), el('dd', {}, el('a', { href: 'tel:' + boilerPolicy.claimsPhone.replace(/[^\d+]/g, ''), text: `${boilerPolicy.claimsPhone}${boilerPolicy.insurer ? ' (' + boilerPolicy.insurer + ')' : ''}` })));
+  out.append(dl.children.length ? dl : el('p', { class: 'muted small', text: 'Nothing saved yet — add where the stopcock and fuse box are, who has spare keys, and so on. Handy for you, a babysitter or a house-sitter.' }));
+  if (h.notes) out.append(el('p', { class: 'small child-notes', style: 'margin-top:8px', text: h.notes }));
+  if (h.id) out.append(lazyFiles({ shared: true, hint: 'Photos of the stopcock, fuse box, meters — so anyone can find them.', get: () => house()?.files || [], save: (list) => { sharedUpdate(h.id, { files: list }); scheduleSync(); } }));
+}
+function openHouseEditor() {
+  const h = house() || {};
+  const f = {};
+  const notes = el('textarea', { rows: '3', placeholder: 'Anything else — e.g. the loft hatch pole is in the garage' }); notes.value = h.notes || '';
+  const save = el('button', { class: 'primary', type: 'button', text: 'Save' });
+  save.addEventListener('click', () => {
+    const data = { notes: notes.value.trim() };
+    for (const [k, i] of Object.entries(f)) data[k] = i.value.trim();
+    if (h.id) sharedUpdate(h.id, data); else sharedSet({ id: HOUSE_ID, type: 'house', ...data, updatedAt: now(), deleted: false });
+    scheduleSync(); closeSheet(); renderHouse(); haptic(); toast('Saved ✓');
+  });
+  const cancel = el('button', { type: 'button', text: 'Cancel' }); cancel.addEventListener('click', closeSheet);
+  openSheet(el('h2', { text: 'Emergency info for the house' }), el('p', { class: 'muted small', text: 'Shared with your partner. Don’t put alarm codes or passwords here.' }),
+    ...HOUSE_FIELDS.map(([k, label, ph]) => { const i = el('input', { type: 'text', autocomplete: 'off', placeholder: ph }); i.value = h[k] || ''; f[k] = i; return el('label', { class: 'field' }, label, i); }),
+    el('label', { class: 'field' }, 'Notes', notes), el('div', { class: 'row' }, cancel, save));
+}
+$('btn-house-edit')?.addEventListener('click', openHouseEditor);
+
 // ---------- Family: key details for the children (shared, encrypted) ----------
 const CHILD_GROUPS = [
   { group: 'Identity', fields: [
@@ -4637,7 +4913,7 @@ function renderLost() {
 
 // ---------- app updates ----------
 // Must match CACHE in sw.js (a test checks this).
-const APP_VERSION = 'evergreen-v64';
+const APP_VERSION = 'evergreen-v65';
 let updateReady = false;
 async function checkForUpdate(manual = false) {
   try {
@@ -4708,6 +4984,10 @@ async function initAll() {
   renderDeliveries();
   renderFamily();
   renderTravel();
+  migrateInsurance();
+  renderPolicies();
+  renderHouse();
+  syncCarInsurance();
   renderCalendar();
   initLifeSections();
   renderHome();

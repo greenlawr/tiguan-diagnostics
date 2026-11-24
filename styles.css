@@ -678,3 +678,12 @@ input[type=checkbox] { accent-color: var(--accent); width: 22px; height: 22px; f
   .splash-lights { display: none; }
   .splash-title { color: #fff; background: none; }
 }
+/* Life menu groups */
+.menu-group { margin: 18px 2px 8px; font-size: 13px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+#life-menu .menu-group:first-child { margin-top: 4px; }
+/* Emergency numbers */
+.emg-numbers { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.emg-numbers a { display: block; padding: 10px 12px; border-radius: 12px; background: var(--urgent-bg); color: var(--text); text-decoration: none; font-size: 14px; }
+.emg-numbers a strong { display: block; font-size: 17px; color: var(--urgent); }
+.state-note.urgent { background: var(--urgent-bg); }
+.state-note.soon { background: var(--soon-bg); }

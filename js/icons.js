@@ -27,6 +27,8 @@ const COLOURS = {
   family: ['#f39bd8', '#a743cf'],
   plane: ['#6fd3ff', '#2a62e0'],
   train: ['#ffb36b', '#d9541e'],
+  shield: ['#7cc7ff', '#2459c9'],
+  alert: ['#ff9a7a', '#d8342b'],
 };
 
 // Symbols drawn on a 48×48 grid. `D` is replaced with the tile's dark colour.
@@ -95,6 +97,8 @@ const GLYPHS = {
     <rect x="24.5" y="29" width="7.5" height="2.2" rx="1.1" fill="D" opacity=".45"/>`,
   flame: `<path d="M24 8.5c1.6 5.2 8 8.6 8 16a8 8 0 0 1-16 0c0-3.8 1.9-6.1 3.8-8 .4 2.5 1.7 4.1 3.3 4.8C22.3 16.6 22.2 12.3 24 8.5z" fill="#fff"/>
     <path d="M24 37.5a4 4 0 0 1-4-4c0-2.5 2.3-4 4-6.6 1.7 2.6 4 4.1 4 6.6a4 4 0 0 1-4 4z" fill="D" opacity=".55"/>`,
+  shield: `<path d="M24 9.5l12 4.4v8.6c0 7.6-5 13.2-12 16-7-2.8-12-8.4-12-16v-8.6z" fill="#fff"/><path d="M18.5 24.2l3.8 3.8 7.4-7.6" fill="none" stroke="D" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" opacity=".8"/>`,
+  alert: `<path d="M24 10.5c1 0 1.9.5 2.4 1.4l11 19.2c1.1 1.9-.3 4.4-2.4 4.4H13c-2.1 0-3.5-2.5-2.4-4.4l11-19.2c.5-.9 1.4-1.4 2.4-1.4z" fill="#fff"/><rect x="22.4" y="18" width="3.2" height="9.5" rx="1.6" fill="D"/><circle cx="24" cy="31.2" r="1.9" fill="D"/>`,
   train: `<rect x="14" y="9.5" width="20" height="24" rx="5" fill="#fff"/><rect x="17" y="13" width="14" height="8" rx="1.8" fill="D" opacity=".55"/><circle cx="19" cy="27.5" r="2" fill="D"/><circle cx="29" cy="27.5" r="2" fill="D"/><path d="M17.5 33.5l-3.5 5M30.5 33.5l3.5 5" stroke="#fff" stroke-width="2.6" stroke-linecap="round"/>`,
   plane: `<path d="M37.2 12.3c1.3-1.3 1.2-3.1.3-3.9-.9-.8-2.6-.9-3.9.4l-5.4 5.6-13.6-4.2-2.7 2.7 11.2 6.7-5.7 6-4.5-.8-2 2 5.1 2.9 2.9 5.1 2-2-.8-4.5 6-5.7 6.7 11.2 2.7-2.7-4.2-13.6z" fill="#fff"/>`,
   family: `<circle cx="16" cy="15.5" r="4.2" fill="#fff" opacity=".85"/><circle cx="32" cy="15.5" r="4.2" fill="#fff" opacity=".85"/>
@@ -127,10 +131,10 @@ export const TILE_ICON = {
   'Car check': 'gauge', 'My car': 'car', 'Shopping list': 'cart', 'Documents': 'doc',
   'Utilities': 'bolt', 'Money & tax': 'money', 'Home': 'house', 'Health': 'heart',
   'Deliveries': 'box', 'Loyalty': 'card', 'Trips': 'fuel', 'Settings': 'gear',
-  'Calendar': 'calendar', 'Sharing': 'share', 'To-do list': 'tasks', 'Family': 'family', 'Travel': 'plane', 'Trains': 'train',
+  'Calendar': 'calendar', 'Sharing': 'share', 'To-do list': 'tasks', 'Family': 'family', 'Travel': 'plane', 'Trains': 'train', 'Insurance': 'shield', 'Bills & suppliers': 'bolt',
 };
 export const SEC_ICON_NAME = {
   deliveries: 'box', documents: 'doc', utilities: 'bolt', subscriptions: 'refresh',
   tax: 'money', home: 'house', health: 'heart', loyalty: 'card', sharing: 'share', shopping: 'cart',
-  bills: 'split', tasks: 'tasks', calendar: 'calendar', family: 'family', travel: 'plane', trains: 'train',
+  bills: 'split', tasks: 'tasks', calendar: 'calendar', family: 'family', travel: 'plane', trains: 'train', insurance: 'shield', emergency: 'alert',
 };

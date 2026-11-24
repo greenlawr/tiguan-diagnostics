@@ -117,15 +117,16 @@ export function householdBalance(bills, myName) {
 }
 
 /** Combined recurring outgoings (subscriptions + utilities) for the money overview. */
-export function moneyOverview(subs = [], utils = []) {
+export function moneyOverview(subs = [], utils = [], policies = []) {
   const subItems = subs.map((s) => ({ name: s.name || 'Subscription', monthly: monthlyEquivalent(s), cat: 'Subscriptions', saving: 0 }));
   const utilItems = utils.map((u) => ({
     name: [u.provider, u.type].filter(Boolean).join(' ') || u.type || 'Utility',
     monthly: u.cost || 0,
-    cat: 'Utilities',
+    cat: 'Bills',
     saving: u.recommendation && u.cost && u.recommendation.bestMonthly ? Math.max(0, u.cost - u.recommendation.bestMonthly) : 0,
   }));
-  const items = [...subItems, ...utilItems].filter((i) => i.monthly > 0).sort((a, b) => b.monthly - a.monthly);
+  const policyItems = policies.map((p) => ({ name: [p.insurer, 'insurance'].filter(Boolean).join(' ') || 'Insurance', monthly: (Number(p.premium) || 0) / 12, cat: 'Insurance', saving: 0 }));
+  const items = [...subItems, ...utilItems, ...policyItems].filter((i) => i.monthly > 0).sort((a, b) => b.monthly - a.monthly);
   const monthly = items.reduce((s, i) => s + i.monthly, 0);
   const byCat = {};
   for (const i of items) byCat[i.cat] = (byCat[i.cat] || 0) + i.monthly;

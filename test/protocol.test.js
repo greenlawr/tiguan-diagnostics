@@ -660,7 +660,7 @@ test('moneyOverview aggregates recurring outgoings and savings', () => {
   const m = moneyOverview(subs, utils);
   assert.ok(Math.abs(m.monthly - (10.99 + 10 + 185 + 40)) < 0.01); // 245.99
   assert.ok(Math.abs(m.yearly - m.monthly * 12) < 0.01);
-  assert.equal(m.categories[0].label, 'Utilities'); // biggest category
+  assert.equal(m.categories[0].label, 'Bills'); // biggest category
   assert.equal(m.items[0].name, 'Octopus Energy'); // biggest single item
   assert.equal(m.savings, 35); // 185 -> 150
   assert.equal(moneyOverview([], []).monthly, 0);
