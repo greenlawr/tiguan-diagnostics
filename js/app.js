@@ -1,6 +1,7 @@
 import { Elm } from './elm.js';
 import { BleTransport, bluetoothSupported, rememberedAdapters } from './ble.js';
-import { SimulatorTransport } from './simulator.js';
+import { SimulatorTransport, DEMO_VIN } from './simulator.js';
+let demoMode = false; // connected to the built-in demo car: nothing it produces is saved
 import * as obd from './obd.js';
 import { PIDS } from './pids.js';
 import { lookupUrl } from './dtc.js';
@@ -147,7 +148,10 @@ function friendly(e) {
 }
 
 // ---------- navigation ----------
+let currentTab = 'home';
+let currentLifeSection = null;
 function showTab(name) {
+  currentTab = name;
   document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('active', t.id === 'tab-' + name));
   document.querySelectorAll('.tabs button').forEach((b) => b.classList.toggle('active', b.dataset.tab === name));
   document.querySelectorAll('.nav-pill').forEach((b) => b.classList.toggle('current', b.dataset.go === name));
@@ -159,9 +163,54 @@ function showTab(name) {
   // The connection pill only matters on the car screens.
   $('conn').style.display = ['check', 'live', 'trips'].includes(name) || elm ? '' : 'none';
   window.scrollTo(0, 0);
+  syncNav();
 }
 document.querySelectorAll('.tabs button').forEach((btn) => btn.addEventListener('click', () => showTab(btn.dataset.tab)));
 document.querySelectorAll('.nav-pill').forEach((btn) => btn.addEventListener('click', () => showTab(btn.dataset.go)));
+
+// ---------- Android back button / back gesture: go up one level, exit only from Home ----------
+// Each open level (a tab other than Home, a Life section, a sheet, a full-screen
+// viewer) gets one browser history entry, so "back" closes the top one.
+let navDepth = 0;
+let navIgnorePops = 0;
+function navLevels() {
+  let n = 0;
+  if (currentTab !== 'home') n++;
+  if (currentTab === 'life' && currentLifeSection) n++;
+  if (!$('sheet')?.hidden) n++;
+  if (document.querySelector('.file-viewer')) n++;
+  if ($('rec-modal') && !$('rec-modal').hidden) n++;
+  if ($('scan-modal') && !$('scan-modal').hidden) n++;
+  return n;
+}
+function syncNav() {
+  if (vault.locked) return;
+  const want = navLevels();
+  if (want > navDepth) {
+    for (let i = navDepth; i < want; i++) history.pushState({ evergreen: i + 1 }, '');
+    navDepth = want;
+  } else if (want < navDepth) {
+    // closed by a button — drop the spare history entries quietly
+    navIgnorePops++;
+    history.go(want - navDepth);
+    navDepth = want;
+  }
+}
+function closeTopLevel() {
+  const viewer = document.querySelector('.file-viewer');
+  if (viewer) { viewer.remove(); return; }
+  if (!$('sheet').hidden) { $('sheet').hidden = true; $('sheet-body').replaceChildren(); return; }
+  if (!$('rec-modal').hidden) { $('rec-modal').hidden = true; return; }
+  if (!$('scan-modal').hidden) { stopScan(); return; }
+  if (currentTab === 'life' && currentLifeSection) { showLifeSection(null); return; }
+  if (currentTab !== 'home') { showTab('home'); }
+}
+window.addEventListener('popstate', () => {
+  if (navIgnorePops > 0) { navIgnorePops--; return; }
+  navDepth = Math.max(0, navDepth - 1);
+  closeTopLevel();
+  syncNav(); // in case closing changed more than one level
+});
 // ----- Life tab as a focused hub-and-spoke -----
 const SEC_ICON = { deliveries: '📦', documents: '📄', utilities: '⚡', subscriptions: '🔁', tax: '💷', home: '🏠', health: '❤️', loyalty: '💳', sharing: '📅', shopping: '🛒' };
 let pendingLifeSection = null;
@@ -196,6 +245,7 @@ function showLifeSection(name) {
   const menu = $('life-menu');
   const back = $('life-back');
   const showMenu = !name;
+  currentLifeSection = name || null;
   menu.hidden = !showMenu;
   back.hidden = showMenu;
   if (!showMenu) $('life-back-title').textContent = $('sec-' + name)?.textContent || '';
@@ -209,6 +259,7 @@ function showLifeSection(name) {
   if (name === 'tax') renderCompany();
   if (name === 'sharing') renderPush();
   if (name === 'deliveries') renderInbox();
+  syncNav();
 }
 function goLife(section) {
   pendingLifeSection = section;
@@ -233,6 +284,7 @@ async function connect(transport) {
     transport.onClose = () => handleDisconnect('The adapter disconnected.');
     await candidate.init();
     elm = candidate;
+    demoMode = transport instanceof SimulatorTransport;
     supportedPids = null;
     setConnected(true, transport.name || 'Connected');
     setStatus('connect-status', '');
@@ -257,6 +309,7 @@ function handleDisconnect(message) {
   stopLive();
   stopTrip(true);
   elm = null;
+  demoMode = false;
   setConnected(false);
   setStatus('connect-status', message);
   log('info', message);
@@ -289,10 +342,10 @@ async function healthCheck() {
       setStatus('check-status', message);
     });
     const previous = loadHistory()[0];
-    saveReport(report);
-    renderReport(report, { previous });
+    if (demoMode) report.demo = true; else saveReport(report);
+    renderReport(report, { previous: demoMode ? null : previous });
     renderHistory();
-    setStatus('check-status', '');
+    setStatus('check-status', demoMode ? 'Demo car — this is example data, so it isn’t saved to your history.' : '');
     $('btn-check').textContent = 'Check again';
   } catch (e) {
     log('info', 'Check failed: ' + e.message);
@@ -411,7 +464,7 @@ function renderReport(r, { past = false, previous = null } = {}) {
       { class: 'verdict ' + r.level },
       el('div', { class: 'headline', text: r.headline }),
       el('p', { text: r.summary }),
-      el('div', { class: 'when', text: (past ? 'Saved check from ' : 'Checked ') + new Date(r.date).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) })
+      el('div', { class: 'when', text: r.demo ? 'Demo car — example data, not saved' : (past ? 'Saved check from ' : 'Checked ') + new Date(r.date).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) })
     )
   );
 
@@ -488,6 +541,14 @@ function renderHistory() {
       renderReport(r, { past: true });
       window.scrollTo(0, 0);
     });
+    const del = el('button', { class: 'del', text: '✕', 'aria-label': 'Delete this check' });
+    del.addEventListener('click', () => {
+      const all = loadHistory();
+      const i = all.findIndex((x) => x.date === r.date);
+      if (i < 0) return;
+      store.save(HISTORY_KEY, all.filter((_, j) => j !== i)); renderHistory();
+      toast('Check deleted', { actionLabel: 'Undo', onAction: () => { const now = loadHistory(); now.splice(i, 0, r); store.save(HISTORY_KEY, now); renderHistory(); } });
+    });
     list.append(
       el(
         'li',
@@ -496,7 +557,7 @@ function renderHistory() {
           'div',
           { class: 'line' },
           el('div', {}, el('div', { class: 'name', text: new Date(r.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) }), el('span', { class: 'tag ' + r.level, text: r.headline })),
-          btn
+          el('div', { class: 'row', style: 'gap:4px;flex:0 0 auto;width:auto' }, btn, del)
         )
       )
     );
@@ -799,7 +860,9 @@ function stopTrip(save = true) {
   if (!tripRunning) return;
   tripRunning = false;
   $('btn-trip').textContent = 'Start recording';
-  if (save && trip && trip.distanceKm > 0.05) {
+  if (save && demoMode) {
+    setStatus('trip-status', 'Demo trip — example data, not saved.');
+  } else if (save && trip && trip.distanceKm > 0.05) {
     saveTrip(trip.summary());
     renderTrips();
     setStatus('trip-status', `Trip saved: ${trip.miles.toFixed(1)} miles${trip.avgMpg > 0 ? `, ${trip.avgMpg.toFixed(1)} mpg` : ''}.`);
@@ -836,7 +899,14 @@ function renderTrips() {
   for (const t of trips) {
     const when = new Date(t.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
     const detail = `${t.miles.toFixed(1)} miles · ${formatDuration(t.seconds)}${t.avgMpg > 0 ? ` · ${t.avgMpg.toFixed(1)} mpg` : ''}`;
-    list.append(el('li', {}, el('div', { class: 'line' }, el('div', {}, el('div', { class: 'name', text: when }), el('div', { class: 'sub', text: detail })))));
+    const del = el('button', { class: 'del', text: '✕', 'aria-label': 'Delete this trip' });
+    del.addEventListener('click', () => {
+      const all = loadTrips(); const i = all.findIndex((x) => x.date === t.date);
+      if (i < 0) return;
+      store.save(TRIPS_KEY, all.filter((_, j) => j !== i)); renderTrips();
+      toast('Trip deleted', { actionLabel: 'Undo', onAction: () => { const now = loadTrips(); now.splice(i, 0, t); store.save(TRIPS_KEY, now); renderTrips(); } });
+    });
+    list.append(el('li', {}, el('div', { class: 'line' }, el('div', {}, el('div', { class: 'name', text: when }), el('div', { class: 'sub', text: detail })), del)));
   }
 }
 
@@ -1323,8 +1393,9 @@ function dayLabel(isoDate) {
 function openSheet(...nodes) {
   $('sheet-body').replaceChildren(...nodes.filter(Boolean));
   $('sheet').hidden = false;
+  syncNav();
 }
-function closeSheet() { $('sheet').hidden = true; $('sheet-body').replaceChildren(); }
+function closeSheet() { $('sheet').hidden = true; $('sheet-body').replaceChildren(); syncNav(); }
 $('sheet').addEventListener('click', (e) => { if (e.target === $('sheet')) closeSheet(); });
 
 // ----- people colours on the calendar
@@ -1761,9 +1832,10 @@ function openRecModal(id) {
   const u = utilities().find((x) => x.id === id);
   $('rec-text').value = u && u.recommendation ? u.recommendation.text : '';
   $('rec-modal').hidden = false;
+  syncNav();
   $('rec-text').focus();
 }
-$('rec-cancel').addEventListener('click', () => { $('rec-modal').hidden = true; recUtilId = null; });
+$('rec-cancel').addEventListener('click', () => { $('rec-modal').hidden = true; recUtilId = null; syncNav(); });
 $('rec-save').addEventListener('click', () => {
   const text = $('rec-text').value.trim();
   if (recUtilId) {
@@ -1772,6 +1844,7 @@ $('rec-save').addEventListener('click', () => {
   }
   $('rec-modal').hidden = true;
   recUtilId = null;
+  syncNav();
   renderUtilities();
   renderDashboard();
 });
@@ -2153,6 +2226,7 @@ function stopScan() {
   if (scanStream) scanStream.getTracks().forEach((t) => t.stop());
   scanStream = null;
   $('scan-modal').hidden = true;
+  syncNav();
 }
 $('scan-cancel').addEventListener('click', stopScan);
 $('btn-loyal-scan').addEventListener('click', async (e) => {
@@ -2168,7 +2242,7 @@ $('btn-loyal-scan').addEventListener('click', async (e) => {
     video.srcObject = scanStream;
     await video.play();
     $('scan-msg').textContent = 'Scanning…';
-    $('scan-modal').hidden = false;
+    $('scan-modal').hidden = false; syncNav();
     const tick = async () => {
       if (!scanStream) return;
       try {
@@ -3267,7 +3341,7 @@ function filesStrip({ get, save, shared, hint }) {
 function openFileViewer(f, onDelete) {
   const view = el('div', { class: 'file-viewer', role: 'dialog', 'aria-label': f.name });
   const body = el('div', { class: 'file-view-body' }, el('p', { class: 'muted', text: 'Opening…' }));
-  const close = () => view.remove();
+  const close = () => { view.remove(); syncNav(); };
   const btnClose = el('button', { class: 'primary', text: 'Close' });
   btnClose.addEventListener('click', close);
   const btnShare = el('button', { text: navigator.share ? 'Share / save' : 'Download' });
@@ -3281,6 +3355,7 @@ function openFileViewer(f, onDelete) {
     el('div', { class: 'sub', text: [fileSize(f.size || 0), f.addedAt ? 'added ' + new Date(f.addedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '', f.by && f.by !== 'Me' ? 'by ' + f.by : ''].filter(Boolean).join(' · ') })), btnClose),
   body, el('div', { class: 'row file-view-actions' }, btnOpen, btnShare, btnDel));
   document.body.append(view);
+  syncNav();
   fileBlob(f).then((blob) => {
     const url = fileThumbs.get(fileKeyOf(f)) || URL.createObjectURL(blob);
     fileThumbs.set(fileKeyOf(f), url);
@@ -4551,7 +4626,7 @@ function renderLost() {
 
 // ---------- app updates ----------
 // Must match CACHE in sw.js (a test checks this).
-const APP_VERSION = 'evergreen-v62';
+const APP_VERSION = 'evergreen-v63';
 let updateReady = false;
 async function checkForUpdate(manual = false) {
   try {
@@ -4605,6 +4680,9 @@ async function initAll() {
   try {
     mediaKey = await vault.mediaKey();
     knownIds = new Set(Object.keys(store.load(SHARED_KEY, {}))); // what's here now counts as seen
+    // Checks run on the demo car used to be saved like real ones — clear them out.
+    const realChecks = loadHistory().filter((r) => !r.demo && r.vin !== DEMO_VIN);
+    if (realChecks.length !== loadHistory().length) store.save(HISTORY_KEY, realChecks);
     setTimeout(() => checkInbox(true), 2500); // parcels the morning check dropped off
     await migratePhotos();
   } catch (e) {

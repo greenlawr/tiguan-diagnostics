@@ -4,7 +4,8 @@
 import { encodeIsoTp } from './isotp.js';
 
 const ascii = (s) => Array.from(s, (c) => c.charCodeAt(0));
-const VIN = 'WVGZZZ5NZHW000000';
+export const DEMO_VIN = 'WVGZZZ5NZHW000000';
+const VIN = DEMO_VIN;
 
 const MODULES = {
   0x7e0: { rx: 0x7e8, part: '04E906027JT', sw: '4517', hw: '04E907309AD', name: 'R4 1.4l TFSI', faults: [[0x02, 0x99, 0x00, 0x09]] },
