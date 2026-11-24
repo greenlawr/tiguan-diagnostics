@@ -259,9 +259,9 @@ const LIFE_GROUPS = [
 function initLifeNav() {
   const tab = $('tab-life');
   const back = el('div', { id: 'life-back', class: 'life-back', hidden: '' });
-  const backBtn = el('button', { class: 'nav-pill', text: '‹ All' });
+  const backBtn = el('button', { class: 'nav-pill back-pill', text: '‹', 'aria-label': 'Back to Life' });
   backBtn.addEventListener('click', () => showLifeSection(null));
-  back.append(backBtn, el('span', { id: 'life-back-title', class: 'name' }));
+  back.append(backBtn, el('span', { id: 'life-back-ico', class: 'life-back-ico' }), el('span', { id: 'life-back-title', class: 'name' }));
 
   // The menu is grouped: what you use daily, the house, the family, money, papers, settings.
   const menu = el('div', { id: 'life-menu' });
@@ -272,18 +272,29 @@ function initLifeNav() {
   if (rest.length) groups.push(['More', rest]);
   for (const [title, names] of groups) {
     if (!names.length) continue;
-    const tiles = el('div', { class: 'tiles' });
+    const box = el('div', { class: 'menu-card' });
     for (const name of names) {
       placed.add(name);
-      const btn = el('button', { class: 'tile-btn' }, icon(SEC_ICON_NAME[name] || 'doc'), el('span', { class: 'tile-label', text: heads[name] }));
+      const btn = el('button', { class: 'tile-btn menu-row', type: 'button', 'aria-label': heads[name], 'aria-describedby': 'msum-' + name }, icon(SEC_ICON_NAME[name] || 'doc'),
+        el('span', { class: 'menu-text' }, el('span', { class: 'tile-label', text: heads[name] }), el('span', { class: 'menu-sum', id: 'msum-' + name })),
+        el('span', { class: 'menu-chev', text: '›', 'aria-hidden': 'true' }));
       btn.addEventListener('click', () => { haptic(); showLifeSection(name); });
-      tiles.append(btn);
+      box.append(btn);
     }
-    menu.append(el('h4', { class: 'menu-group', text: title }), tiles);
+    menu.append(el('h4', { class: 'menu-group', text: title }), box);
   }
   tab.prepend(menu);
   tab.insertBefore(back, menu);
 
+  for (const h of tab.querySelectorAll(':scope > h3[id^="sec-"]')) {
+    const first = h.nextElementSibling;
+    const intro = first && first.classList.contains('card') && first.querySelector(':scope > p.muted');
+    if (intro && intro.textContent.length > 110) {
+      intro.classList.add('intro');
+      intro.setAttribute('role', 'button'); intro.tabIndex = 0;
+      intro.addEventListener('click', () => intro.classList.toggle('open'));
+    }
+  }
   let cur = '';
   for (const child of [...tab.children]) {
     if (child === menu || child === back) continue;
@@ -293,12 +304,46 @@ function initLifeNav() {
   }
   showLifeSection(null);
 }
+// A one-line "what's in here" under each section in the Life menu.
+function sectionSummary(name) {
+  try {
+    const n = (k) => sharedItems(k).length;
+    const today = todayISO();
+    const plural = (x, one, many = one + 's') => `${x} ${x === 1 ? one : many}`;
+    switch (name) {
+      case 'calendar': { const t = upcomingEvents(0).length; return t ? `${t} today` : 'Nothing today'; }
+      case 'shopping': { const x = sharedItems('shop').filter((i) => !i.done).length; return x ? `${x} to buy` : 'All bought'; }
+      case 'tasks': { const x = sharedItems('task').filter((i) => !i.done).length; return x ? `${x} to do` : 'All done'; }
+      case 'deliveries': { const x = sharedItems('delivery').filter((d) => !d.done).length; const t = sharedItems('delivery').filter((d) => !d.done && d.expected === today).length; return x ? `${x} on the way${t ? ` · ${t} today` : ''}` : 'Nothing expected'; }
+      case 'trains': { const s = settings(); return s.trainHome ? `${stationName(s.trainHome === 'other' ? (s.trainOther || '') : s.trainHome)} ⇄ Euston` : 'Choose your station'; }
+      case 'emergency': return 'Numbers, people & the house';
+      case 'utilities': { const u = utilities(); const m = u.reduce((a, b) => a + (Number(b.cost) || 0), 0); return u.length ? `${plural(u.length, 'bill')}${m ? ` · ${money(m)}/mo` : ''}` : 'Add your bills'; }
+      case 'insurance': { const p = policies().filter((x) => x.renewal && x.renewal >= today); const next = p[0]; return policies().length ? `${plural(policies().length, 'policy', 'policies')}${next ? ` · next renews ${fmtDate(next.renewal).replace(/ \d{4}$/, '')}` : ''}` : 'Add your policies'; }
+      case 'home': { const i = store.load(INV_KEY, []).length; const m = store.load(MAINT_KEY, []).length; return [i ? plural(i, 'item') : '', m ? plural(m, 'reminder') : ''].filter(Boolean).join(' · ') || 'Valuables & jobs'; }
+      case 'family': { const c = children().length; return c ? plural(c, 'person', 'people') : 'Add the family'; }
+      case 'health': { const c = store.load(CHECK_KEY, []).map((x) => nextDue(x.last, x.interval)).filter(Boolean).sort()[0]; return c ? `next due ${fmtDate(c).replace(/ \d{4}$/, '')}` : 'Dentist, eye tests…'; }
+      case 'travel': { const t = upcomingTrip(); return t ? `${t.title} ${tripStatus(t, today)}` : 'No trips planned'; }
+      case 'tax': { const m = moneyOverview(store.load(SUBS_KEY, []), utilities(), policies()); return m.monthly ? `${money(m.monthly)} a month out` : 'Outgoings & tax dates'; }
+      case 'subscriptions': { const x = store.load(SUBS_KEY, []); return x.length ? plural(x.length, 'subscription') : 'Netflix, Spotify…'; }
+      case 'bills': { const b = sharedItems('bill'); if (!b.length) return 'Who paid for what'; const bal = householdBalance(b, myName()); return bal.net === 0 ? 'All square' : bal.net > 0 ? `${partnerName()} owes you ${money(Math.abs(bal.net))}` : `You owe ${partnerName()} ${money(Math.abs(bal.net))}`; }
+      case 'documents': { const d = store.load(DOCS_KEY, []).length; return d ? plural(d, 'document') : 'Certificates & papers'; }
+      case 'loyalty': { const l = store.load(LOYAL_KEY, []).length; return l ? plural(l, 'card') : 'Store cards'; }
+      default: return '';
+    }
+  } catch { return ''; }
+}
+function updateMenuSummaries() {
+  document.querySelectorAll('.menu-sum').forEach((elx) => { elx.textContent = sectionSummary(elx.id.slice(5)); });
+}
 function showLifeSection(name) {
   const tab = $('tab-life');
   const menu = $('life-menu');
   const back = $('life-back');
   const showMenu = !name;
   currentLifeSection = name || null;
+  if (showMenu) updateMenuSummaries();
+  const backIco = $('life-back-ico');
+  if (backIco) backIco.replaceChildren(...(name ? [icon(SEC_ICON_NAME[name] || 'doc')] : []));
   menu.hidden = !showMenu;
   back.hidden = showMenu;
   if (!showMenu) $('life-back-title').textContent = $('sec-' + name)?.textContent || '';
@@ -1377,6 +1422,7 @@ const HOME_TILES = [
   { icon: '⚙️', label: 'Settings', go: () => showTab('help') },
 ];
 // Home shows your favourite sections; everything else is one tap away under Life.
+const HOME_TILES_EL = document.getElementById('home-tiles');
 const DEFAULT_TILES = ['Calendar', 'Shopping list', 'To-do list', 'Deliveries', 'Family', 'Bills & suppliers', 'Insurance', 'Travel', 'Car'];
 const favouriteTiles = () => { const f = settings().homeTiles; return Array.isArray(f) && f.length ? f : DEFAULT_TILES; };
 function openTilePicker() {
@@ -1389,28 +1435,28 @@ function openTilePicker() {
   openSheet(el('h2', { text: 'Choose your Home shortcuts' }), el('p', { class: 'muted small', text: 'Just on this phone. Everything else is under Life.' }), el('div', { class: 'tile-picks' }, ...boxes), el('div', { class: 'row' }, reset, save));
 }
 function renderTiles() {
-  const grid = $('home-tiles');
+  const grid = HOME_TILES_EL;
   if (!grid) return;
   grid.replaceChildren();
   const favs = favouriteTiles();
   for (const t of HOME_TILES.filter((x) => favs.includes(x.label))) {
     const tile = el('button', { class: 'tile-btn' }, icon(TILE_ICON[t.label] || 'doc'), el('span', { class: 'tile-label', text: t.label }));
     const badge = t.badge && t.badge();
-    if (badge) tile.append(el('span', { class: 'tag ' + badge.cls, text: badge.text }));
+    if (badge) {
+      // Shortcuts show just a number (e.g. "in 10 days" → "10d"); the full wording is inside the section.
+      const m = String(badge.text).match(/(\d+)/);
+      const short = !m ? '•' : /\d+\s*days?\b/.test(badge.text) ? m[1] + 'd' : m[1];
+      tile.append(el('span', { class: 'tile-badge ' + badge.cls, text: short, title: badge.text, 'aria-label': badge.text }));
+    }
     tile.addEventListener('click', () => { haptic(); t.go(); });
     grid.append(tile);
   }
   const all = el('button', { class: 'tile-btn tile-more' }, el('span', { class: 'tile-more-ico', text: '⋯' }), el('span', { class: 'tile-label', text: 'Everything else' }));
   all.addEventListener('click', () => { haptic(); goLife(null); });
   grid.append(all);
-  const edit = el('button', { class: 'link tiles-edit', type: 'button', text: 'Choose shortcuts' });
-  edit.addEventListener('click', openTilePicker);
-  grid.parentNode?.querySelectorAll(':scope > .tiles-edit').forEach((x) => x.remove());
-  grid.after(edit);
 }
 function renderHome() {
   renderDashboard();
-  renderTiles();
 }
 
 // ---------- this-week agenda (a glanceable snapshot of the family calendar) ----------
@@ -1680,14 +1726,18 @@ function briefingCard(items) {
 
   const name = myName() !== 'Me' ? `, ${myName()}` : '';
   const level = lines.some((l) => l.level === 'urgent') ? 'urgent' : lines.some((l) => l.level === 'soon') ? 'soon' : 'ok';
-  const card = el('div', { class: 'verdict briefing ' + level },
-    el('div', { class: 'headline', text: `${greeting()}${name}` }),
-    el('div', { class: 'muted small', text: now.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' }) }));
-  if (!lines.length) card.append(el('p', { text: 'Nothing pressing today — you’re on top of things.' }));
+  const urgentN = lines.filter((l) => l.level === 'urgent').length;
+  const status = urgentN ? `${urgentN} thing${urgentN === 1 ? ' needs' : 's need'} you` : level === 'soon' ? 'A few things this week' : 'All calm today';
+  const card = el('div', { class: 'briefing brief-' + level },
+    el('div', { class: 'brief-head' },
+      el('div', { class: 'brief-date', text: now.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' }) }),
+      el('div', { class: 'headline', text: `${greeting()}${name}` }),
+      el('span', { class: 'brief-status', text: status })));
+  if (!lines.length) card.append(el('p', { class: 'brief-empty', text: 'Nothing pressing today — you’re on top of things.' }));
   else {
     const ul = el('ul', { class: 'brief-list' });
     for (const l of lines.slice(0, 7)) {
-      const li = el('li', { class: l.level || '' }, el('span', { class: 'brief-ico', text: l.icon }), el('span', { text: l.text }));
+      const li = el('li', { class: l.level || '' }, el('span', { class: 'brief-ico', text: l.icon }), el('span', { class: 'brief-text', text: l.text }));
       if (l.go) { li.classList.add('tappable'); li.addEventListener('click', l.go); }
       ul.append(li);
     }
@@ -1713,6 +1763,11 @@ function renderDashboard() {
   items.push(...collectExtraReminders());
   items.sort((a, b) => a.days - b.days);
   out.replaceChildren(briefingCard(items));
+  renderTiles();
+  out.append(el('h3', { class: 'home-h', text: 'Shortcuts' }), HOME_TILES_EL);
+  const editTiles = el('button', { class: 'link tiles-edit', type: 'button', text: 'Choose shortcuts' });
+  editTiles.addEventListener('click', openTilePicker);
+  out.append(editTiles);
   renderToday(out);
   const wx = weatherCard();
   if (wx) out.append(wx);
@@ -1722,15 +1777,23 @@ function renderDashboard() {
 
   if (items.length) {
     const list = el('ul', { class: 'list' });
-    for (const i of items.slice(0, 8)) {
-      const li = el('li', {}, el('div', { class: 'line' },
+    const FIRST = 5;
+    items.forEach((i, n) => {
+      const li = el('li', { class: n >= FIRST ? 'more-row' : '' }, el('div', { class: 'line' },
         el('div', {}, el('div', { class: 'name', text: i.label }), el('div', { class: 'sub', text: i.sub })),
         el('span', { class: 'tag ' + i.level, text: i.text.replace(i.label + ' ', '') })
       ));
       if (i.go) { li.classList.add('tappable'); li.addEventListener('click', i.go); }
+      if (n >= FIRST) li.hidden = true;
       list.append(li);
+    });
+    const card = el('div', { class: 'card' }, el('h2', { text: 'Coming up' }), list);
+    if (items.length > FIRST) {
+      const more = el('button', { class: 'link today-toggle', type: 'button', text: `Show all ${items.length} ▾` });
+      more.addEventListener('click', () => { const open = more.dataset.open !== '1'; more.dataset.open = open ? '1' : ''; list.querySelectorAll('.more-row').forEach((r) => (r.hidden = !open)); more.textContent = open ? 'Show fewer ▴' : `Show all ${items.length} ▾`; });
+      card.append(more);
     }
-    out.append(el('div', { class: 'card' }, el('h2', { text: 'Coming up' }), list));
+    out.append(card);
   }
 
   // "Time to compare" nudge for utilities renewing within ~30 days.
@@ -5003,7 +5066,7 @@ function renderLost() {
 
 // ---------- app updates ----------
 // Must match CACHE in sw.js (a test checks this).
-const APP_VERSION = 'evergreen-v66';
+const APP_VERSION = 'evergreen-v67';
 let updateReady = false;
 async function checkForUpdate(manual = false) {
   try {
