@@ -50,3 +50,19 @@ test('old deleted markers are dropped; malformed entries are ignored', async () 
   } });
   assert.deepEqual(Object.keys(r.body.items).sort(), ['live', 'recent']);
 });
+
+test('a sync with nothing new does not write to storage', async () => {
+  const { default: worker } = await import('../sync-worker/worker.js');
+  const { householdId, writeToken } = await import('../js/household.js');
+  const m = new Map(); let puts = 0;
+  const env = { HOUSEHOLD: { get: async (k) => m.get(k) ?? null, put: async (k, v) => { puts++; m.set(k, v); }, delete: async (k) => { m.delete(k); } } };
+  const code = 'ABCD-EFGH-JKLM-NPQR'; const hid = await householdId(code); const tok = await writeToken(code);
+  const post = (items) => worker.fetch(new Request('https://w.dev/' + hid, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Evergreen-Token': tok }, body: JSON.stringify({ items }) }), env);
+  const item = { a: { iv: 'x', ct: 'y', updatedAt: Date.now() } };
+  await post(item);
+  const after = puts;
+  await post(item); await post({});
+  assert.equal(puts, after, 'no writes when nothing changed');
+  await post({ a: { ...item.a, updatedAt: item.a.updatedAt + 5 } });
+  assert.equal(puts, after + 1);
+});

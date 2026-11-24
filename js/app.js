@@ -65,7 +65,15 @@ const store = {
     return vault.get(key, fallback);
   },
   save(key, value) {
-    vault.set(key, value).catch((e) => log('info', 'Save failed: ' + e.message));
+    vault.set(key, value).catch((e) => {
+      log('info', 'Save failed: ' + e.message);
+      // Never fail silently — losing data quietly is the worst outcome.
+      if (Date.now() - (store._warned || 0) > 60000) {
+        store._warned = Date.now();
+        const full = /quota|exceeded/i.test(e.name + ' ' + e.message);
+        toast(full ? "This phone's storage for Evergreen is full — remove some photos or old items, then try again." : "Couldn't save that change on this phone — please try again.", { ms: 8000 });
+      }
+    });
   },
 };
 
@@ -3459,7 +3467,7 @@ function renderLost() {
 
 // ---------- app updates ----------
 // Must match CACHE in sw.js (a test checks this).
-const APP_VERSION = 'evergreen-v56';
+const APP_VERSION = 'evergreen-v57';
 let updateReady = false;
 async function checkForUpdate(manual = false) {
   try {

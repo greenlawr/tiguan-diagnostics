@@ -221,19 +221,22 @@ export default {
         return json({ error: 'bad body' }, 400);
       }
       const serverNow = Date.now();
-      const current = JSON.parse((await env.HOUSEHOLD.get(id)) || '{"items":{}}');
+      const stored = await env.HOUSEHOLD.get(id);
+      const current = JSON.parse(stored || '{"items":{}}');
+      let changed = !stored; // a new household is always saved
       for (const [key, value] of Object.entries(incoming.items || {})) {
         // Only accept well-formed ciphertext entries; last write wins per item.
         if (!value || typeof value.updatedAt !== 'number' || typeof value.iv !== 'string' || typeof value.ct !== 'string') continue;
         const entry = { ...value, updatedAt: Math.min(value.updatedAt, serverNow + MAX_CLOCK_AHEAD_MS) };
-        if (!current.items[key] || entry.updatedAt > current.items[key].updatedAt) current.items[key] = entry;
+        if (!current.items[key] || entry.updatedAt > current.items[key].updatedAt) { current.items[key] = entry; changed = true; }
       }
       // Drop deleted-item markers once they're old enough to have reached both phones.
-      for (const [key, value] of Object.entries(current.items)) if (value.deleted && value.updatedAt < serverNow - TOMBSTONE_MS) delete current.items[key];
+      for (const [key, value] of Object.entries(current.items)) if (value.deleted && value.updatedAt < serverNow - TOMBSTONE_MS) { delete current.items[key]; changed = true; }
       // Cap stored size defensively (a shared household list should be small).
       const body = JSON.stringify(current);
       if (body.length > 2_000_000) return json({ error: 'too large' }, 413);
-      await env.HOUSEHOLD.put(id, body);
+      // Only write when something changed: storage writes are limited (1,000 a day on the free plan).
+      if (changed) await env.HOUSEHOLD.put(id, body);
       return json(current);
     }
 

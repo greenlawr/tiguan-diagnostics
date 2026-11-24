@@ -11,7 +11,13 @@ const ITERATIONS = 250000;
 const enc = new TextEncoder();
 const dec = new TextDecoder();
 
-const toB64 = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf)));
+function toB64(buf) {
+  // In chunks: spreading a big array into fromCharCode overflows the call stack (~125 KB).
+  const bytes = new Uint8Array(buf);
+  let s = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  return btoa(s);
+}
 const fromB64 = (str) => Uint8Array.from(atob(str), (c) => c.charCodeAt(0));
 
 async function deriveKey(passphrase, salt, iterations = ITERATIONS) {
@@ -144,13 +150,17 @@ export class Vault {
 
   // Writes run one at a time, each encrypting the data as it is when its turn
   // comes, so a slower earlier save can never overwrite a newer one.
+  // Many saves in a row (a calendar import, a sync) share one queued write
+  // instead of re-encrypting everything once per item.
   _persist() {
+    if (this._queued) return this._queued;
     const run = async () => {
+      this._queued = null; // changes from here on need another write
       const blob = await encryptWithKey(this.key, this.data, this.salt);
       this.storage.setItem(STORAGE_KEY, JSON.stringify(blob));
     };
-    this._writing = (this._writing || Promise.resolve()).then(run, run);
-    return this._writing;
+    this._queued = this._writing = (this._writing || Promise.resolve()).then(run, run);
+    return this._queued;
   }
 
   /** The encrypted blob, for the user to download as a backup. */

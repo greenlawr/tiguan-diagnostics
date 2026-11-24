@@ -7,7 +7,13 @@
 
 const enc = new TextEncoder();
 const dec = new TextDecoder();
-const toB64 = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf)));
+function toB64(buf) {
+  // In chunks: spreading a big array into fromCharCode overflows the call stack (~125 KB).
+  const bytes = new Uint8Array(buf);
+  let s = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  return btoa(s);
+}
 const fromB64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
 const toHex = (buf) => Array.from(new Uint8Array(buf), (b) => b.toString(16).padStart(2, '0')).join('');
 
