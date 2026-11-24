@@ -444,12 +444,15 @@ test('UK income tax estimates (England, rough)', () => {
 
 test('NI and dividend tax', () => {
   assert.equal(employeeNI(50270), 3016);
-  assert.equal(dividendTax(0, 10000), 0); // covered by the unused Personal Allowance
+  assert.equal(dividendTax(0, 10000, 2025), 0); // covered by the unused Personal Allowance
   // the £500 allowance uses up the last £270 of the basic band, so the rest is higher rate
-  assert.equal(dividendTax(50000, 10000), Math.round(9500 * 0.3375));
-  assert.equal(dividendTax(5000, 10000), Math.round(1930 * 0.0875));
-  assert.equal(dividendTax(49770, 1000), Math.round(500 * 0.3375));
-  assert.equal(dividendTax(0, 60000), Math.round(37200 * 0.0875 + 9730 * 0.3375));
+  assert.equal(dividendTax(50000, 10000, 2025), Math.round(9500 * 0.3375));
+  assert.equal(dividendTax(5000, 10000, 2025), Math.round(1930 * 0.0875));
+  assert.equal(dividendTax(49770, 1000, 2025), Math.round(500 * 0.3375));
+  assert.equal(dividendTax(0, 60000, 2025), Math.round(37200 * 0.0875 + 9730 * 0.3375));
+  // 2026/27: basic and higher dividend rates up 2 points
+  assert.equal(dividendTax(5000, 10000, 2026), Math.round(1930 * 0.1075));
+  assert.equal(dividendTax(50000, 10000, 2026), Math.round(9500 * 0.3575));
   const th = takeHome(50270);
   assert.equal(th.net, 50270 - 7540 - 3016);
 });

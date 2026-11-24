@@ -24,6 +24,8 @@ import { syncShared } from './sync.js';
 import { savePhoto, loadPhoto, deletePhoto, exportAllPhotos, importAllPhotos } from './photos.js';
 import { parseImport, importCount } from './import.js';
 import { icon, TILE_ICON, SEC_ICON_NAME } from './icons.js';
+import { tripChecks, tripStatus, tripCalendarRows, timeline, matchTrip, countryCode, countryName, flag, daysBetween, BOOKING_KINDS } from './travel.js';
+import { uploadSharedFile, downloadSharedFile, deleteSharedFile, savePrivateFile, loadPrivateFile, deletePrivateFile, exportPrivateFiles, importPrivateFiles, checkFileSize } from './files.js';
 
 const haptic = (ms = 12) => { try { navigator.vibrate?.(ms); } catch { /* unsupported */ } };
 
@@ -95,6 +97,7 @@ function toast(message, { actionLabel, onAction, ms = 5000 } = {}) {
 
 /** Delete an item from an array collection with a 5s Undo (no scary dialog). */
 function deleteItem(key, id, rerender, { photoId, label } = {}) {
+  const files = (store.load(key, []).find((x) => x.id === id) || {}).files || [];
   const items = store.load(key, []);
   const index = items.findIndex((x) => x.id === id);
   if (index < 0) return;
@@ -113,6 +116,7 @@ function deleteItem(key, id, rerender, { photoId, label } = {}) {
     },
   });
   if (photoId) setTimeout(() => { if (!undone) deletePhoto(photoId); }, 5300); // keep the photo until Undo expires
+  if (files.length) setTimeout(() => { if (!undone) dropFiles(files); }, 5300);
 }
 
 // ---------- technical log ----------
@@ -1043,6 +1047,8 @@ function initCarTab() {
   for (const key of ['mot', 'tax', 'insurance', 'service']) if (v[key]) $(key + '-input').value = v[key];
   refreshRenewals();
   renderOfficial();
+  $('car-files').replaceChildren(el('div', { class: 'card' }, lazyFiles({ shared: false, hint: 'V5C logbook, insurance certificate, service and repair receipts.',
+    get: () => loadVehicle().files || [], save: (list) => saveVehicle({ ...loadVehicle(), files: list }) })));
   // Keep the official record (and so the MOT / tax reminders) fresh — weekly.
   if (v.reg && paired() && (!v.officialAt || Date.now() - v.officialAt > CAR_REFRESH_MS)) lookupCar(false);
   renderPark();
@@ -1232,6 +1238,7 @@ const HOME_TILES = [
   { icon: '💳', label: 'Loyalty', go: () => goLife('loyalty') },
   { icon: '🩺', label: 'Car check', go: () => showTab('check') },
   { icon: '🚗', label: 'My car', go: () => showTab('car') },
+  { icon: '✈️', label: 'Travel', go: () => goLife('travel'), badge: () => { const t = upcomingTrip(); return t ? { text: tripStatus(t, todayISO()), cls: 'minor' } : null; } },
   { icon: '👨‍👩‍👧', label: 'Family', go: () => goLife('family'), badge: () => { const n = sharedItems('child').filter((c) => { const cd = c.passportExpiry && countdown(c.passportExpiry, ''); return cd && cd.days <= 180; }).length; return n ? { text: String(n), cls: 'soon' } : null; } },
   { icon: '⚙️', label: 'Settings', go: () => showTab('help') },
 ];
@@ -1275,6 +1282,9 @@ function upcomingEvents(days = 7) {
     const d = new Date(nb.date + 'T00:00:00');
     if (d >= today && d < horizon) rows.push({ id: 'bday-' + c.id, title: `🎂 ${c.name}'s birthday${nb.turning ? ` (${nb.turning})` : ''}`, date: nb.date, time: '', who: 'Birthdays', virtual: true });
   }
+  // Trips (and their flights, hotel check-ins…) appear automatically too.
+  const fromISO = todayISO(), toISO = isoPlus(fromISO, days);
+  for (const t of trips()) rows.push(...tripCalendarRows(t, fromISO, toISO));
   // Events from a connected calendar always belong to someone: if that phone had
   // no name set, it's yours (your calendar) or your partner's (theirs).
   const mySrc = settings().calSrc;
@@ -1302,7 +1312,7 @@ function dayLabel(isoDate) {
 }
 // ----- bottom sheet (used for event details, adding events, the fingerprint offer)
 function openSheet(...nodes) {
-  $('sheet-body').replaceChildren(...nodes);
+  $('sheet-body').replaceChildren(...nodes.filter(Boolean));
   $('sheet').hidden = false;
 }
 function closeSheet() { $('sheet').hidden = true; $('sheet-body').replaceChildren(); }
@@ -1313,6 +1323,7 @@ const ADDED_HERE = '#d98a00';
 function personColour(who) {
   if (!who) return ADDED_HERE;
   if (who === 'Birthdays') return '#8a4fd6';
+  if (who === 'Trips') return '#0b8b80';
   if (who === 'Both') return '#2b6cd6'; // in both your calendars
   return who === myName() ? '#1f9a5d' : '#d6457a'; // you green, your partner pink
 }
@@ -1323,7 +1334,7 @@ function eventCard(e, compact = false) {
     el('div', { class: 'cal-ev-title', text: e.title || 'Event' }),
     e.where ? el('div', { class: 'cal-ev-where', text: e.where }) : null);
   card.style.setProperty('--c', personColour(e.who));
-  card.addEventListener('click', () => showEvent(e));
+  card.addEventListener('click', () => (e.tripId ? openTrip(e.tripId) : showEvent(e)));
   return card;
 }
 function eventCards(rows, compact) { const box = el('div', { class: 'cal-evs' }); for (const e of rows) box.append(eventCard(e, compact)); return box; }
@@ -1382,7 +1393,7 @@ function renderCalendar() {
   const today = todayISO();
   const all = upcomingEvents(CAL_DAYS);
   // Legend: whose events are on the calendar (you first, "Added here" last)
-  const rank = (p) => (p === myName() ? 0 : p === 'Both' ? 2 : p === 'Birthdays' ? 3 : !p ? 4 : 1); // you, partner, both, birthdays, added here
+  const rank = (p) => (p === myName() ? 0 : p === 'Both' ? 2 : p === 'Birthdays' ? 3 : p === 'Trips' ? 4 : !p ? 5 : 1); // you, partner, both, birthdays, trips, added here
   const people = [...new Set(all.map((e) => e.who || ''))].sort((x, y) => rank(x) - rank(y) || x.localeCompare(y));
   $('cal-legend').replaceChildren(...people.map((p) => { const k = el('span', { class: 'cal-key', text: p === 'Both' ? 'Both of you' : p || 'Added here' }); k.style.setProperty('--c', personColour(p)); return k; }));
   // Day strip: the next 14 days, with a dot for each person who has something on
@@ -1503,10 +1514,12 @@ function renderDashboard() {
   if (items.length) {
     const list = el('ul', { class: 'list' });
     for (const i of items.slice(0, 8)) {
-      list.append(el('li', {}, el('div', { class: 'line' },
+      const li = el('li', {}, el('div', { class: 'line' },
         el('div', {}, el('div', { class: 'name', text: i.label }), el('div', { class: 'sub', text: i.sub })),
         el('span', { class: 'tag ' + i.level, text: i.text.replace(i.label + ' ', '') })
-      )));
+      ));
+      if (i.go) { li.classList.add('tappable'); li.addEventListener('click', i.go); }
+      list.append(li);
     }
     out.append(el('div', { class: 'card' }, el('h2', { text: 'Coming up' }), list));
   }
@@ -1544,6 +1557,7 @@ function renderDocs() {
     );
     const card = el('div', { class: 'card doc' }, head);
     attachPhoto(card, d, d.label);
+    card.append(privateFiles(DOCS_KEY, d.id, 'Keep a scan or PDF of the document with it.'));
     const del = el('button', { class: 'link del-wide', text: 'Delete' });
     del.addEventListener('click', () => deleteItem(DOCS_KEY, d.id, renderDocs, { photoId: d.photoId, label: d.label }));
     card.append(del);
@@ -1609,7 +1623,8 @@ const EMG_KEY = 'tiguan-emergency';
 const SETTINGS_KEY = 'tiguan-settings';
 
 const partnerEmail = () => (store.load(SETTINGS_KEY, {}).partnerEmail || '').trim();
-const money = (n) => '£' + Math.round(n).toLocaleString('en-GB');
+// Pence matter when splitting bills (£42.25, not £42); whole pounds stay tidy (£120).
+const money = (n) => { const v = Math.round((Number(n) || 0) * 100) / 100; return (v < 0 ? '-£' : '£') + Math.abs(v).toLocaleString('en-GB', { minimumFractionDigits: Number.isInteger(v) ? 0 : 2, maximumFractionDigits: 2 }); };
 const COMPARE = { Energy: 'https://www.moneysavingexpert.com/utilities/', Broadband: 'https://www.moneysavingexpert.com/broadband/', Mobile: 'https://www.moneysavingexpert.com/mobiles/', Insurance: 'https://www.moneysavingexpert.com/insurance/' };
 
 // Utilities
@@ -1646,10 +1661,12 @@ function renderUtilities() {
     const del = el('button', { class: 'del', text: '✕' });
     del.addEventListener('click', () => {
       sharedRemove(u.id); scheduleSync(); renderUtilities(); renderDashboard();
-      toast(`Deleted ${u.type}`, { actionLabel: 'Undo', onAction: () => { sharedSet({ ...u, type: 'utility', updatedAt: now(), deleted: false }); scheduleSync(); renderUtilities(); renderDashboard(); } });
+      let undone = false;
+      setTimeout(() => { if (!undone) dropFiles(u.files || []); }, 8500);
+      toast(`Deleted ${u.type}`, { actionLabel: 'Undo', onAction: () => { undone = true; sharedSet({ ...u, type: 'utility', updatedAt: now(), deleted: false }); scheduleSync(); renderUtilities(); renderDashboard(); } });
     });
     actions.append(del);
-    row.append(actions);
+    row.append(actions, lazyFiles({ shared: true, hint: 'Your contract, latest bill or a meter photo.', get: () => sharedItems('utility').find((x) => x.id === u.id)?.files || [], save: (list) => { sharedUpdate(u.id, { files: list }); scheduleSync(); } }));
     if (u.recommendation) {
       const r = u.recommendation;
       const saving = u.cost && r.bestMonthly && u.cost - r.bestMonthly > 0 ? u.cost - r.bestMonthly : null;
@@ -1820,6 +1837,7 @@ function renderInventory() {
     const sub = [it.room, it.value ? money(it.value) : null, it.serial ? 'S/N ' + it.serial : null].filter(Boolean).join(' · ');
     const card = el('div', { class: 'card doc' }, el('div', { class: 'line' }, el('div', {}, el('div', { class: 'name', text: it.name }), el('div', { class: 'sub', text: sub })), null));
     attachPhoto(card, it, it.name);
+    card.append(privateFiles(INV_KEY, it.id, 'Receipts, warranty cards and manuals.'));
     const del = el('button', { class: 'link del-wide', text: 'Delete' });
     del.addEventListener('click', () => deleteItem(INV_KEY, it.id, renderInventory, { photoId: it.photoId, label: it.name }));
     card.append(del);
@@ -1933,6 +1951,7 @@ function renderMaint() {
     const del = el('button', { class: 'del', text: '✕' });
     del.addEventListener('click', () => deleteItem(MAINT_KEY, m.id, () => { renderMaint(); renderDashboard(); }, { label: m.task }));
     row.querySelector('.line').append(del);
+    row.append(privateFiles(MAINT_KEY, m.id, 'Quotes, invoices and guarantees.'));
     list.append(row);
   }
 }
@@ -1958,6 +1977,7 @@ function renderCheckups() {
     const del = el('button', { class: 'del', text: '✕' });
     del.addEventListener('click', () => deleteItem(CHECK_KEY, c.id, () => { renderCheckups(); renderDashboard(); }, { label: c.type }));
     row.querySelector('.line').append(del);
+    row.append(privateFiles(CHECK_KEY, c.id, 'Letters, results and prescriptions.'));
     list.append(row);
   }
 }
@@ -2016,6 +2036,20 @@ function collectExtraReminders() {
   for (const c of store.load(CHECK_KEY, [])) add(nextDue(c.last, c.interval), c.type, 'Health');
   for (const d of taxDeadlines()) add(d.date, d.label, 'Tax');
   for (const c of sharedItems('child')) if (c.passportExpiry) add(c.passportExpiry, `${c.name}'s passport`, 'Family');
+  for (const c of sharedItems('child')) if (c.ghicExpiry) add(c.ghicExpiry, `${c.name}'s GHIC`, 'Family');
+  // Travel: the trip itself, plus anything to sort before you go.
+  const today = todayISO();
+  for (const t of trips()) {
+    if (!t.start || t.end < today) continue;
+    const until = daysBetween(today, t.start);
+    if (until >= 0 && until <= 14) items.push({ label: `${tripFlag(t)} ${t.title || 'Trip'}`, sub: 'Travel', days: until, level: until <= 2 ? 'soon' : 'ok', text: until === 0 ? 'leaving today' : until === 1 ? 'leaving tomorrow' : `in ${until} days`, go: () => openTrip(t.id) });
+    // One row per trip ("3 things to sort"), not one per check, so Home stays calm.
+    const checks = tripChecks(t, children(), today).filter((c) => !(c.level === 'info' && until > 60));
+    if (checks.length) {
+      const heads = [...new Set(checks.map((c) => ({ passport: 'passport', auth: 'travel authorisation', ghic: 'GHIC', insurance: 'insurance', checkin: 'online check-in', advice: 'entry rules' }[c.kind] || 'check')))];
+      items.push({ label: `${tripFlag(t)} ${t.title || 'Trip'}: ${checks.length === 1 ? '1 thing' : checks.length + ' things'} to sort`, sub: 'Travel · ' + heads.join(', '), days: Math.max(0, until), level: checks.some((c) => c.level === 'urgent') ? 'urgent' : 'soon', text: until > 0 ? `trip in ${until}d` : 'now', go: () => openTrip(t.id) });
+    }
+  }
   return items;
 }
 
@@ -2257,7 +2291,7 @@ function peopleOptions(sel, includeAnyone) {
   for (const n of [myName(), partnerName()]) sel.add(new Option(n, n));
   if (keep) sel.value = keep;
 }
-function renderSharedAll() { renderShared(); renderBills(); renderTasks(); renderDeliveries(); renderUtilities(); renderFamily(); renderCalendar(); renderHome(); renderLost(); }
+function renderSharedAll() { renderShared(); renderBills(); renderTasks(); renderDeliveries(); renderUtilities(); renderFamily(); renderTravel(); renderCalendar(); renderHome(); renderLost(); }
 
 // Shared bills with who-owes-whom
 function renderBills() {
@@ -2311,9 +2345,9 @@ function renderTasks() {
     const label = el('span', { class: 'name', text: t.text });
     if (t.done) label.style.textDecoration = 'line-through';
     const who = t.assignee && t.assignee !== 'Anyone' ? el('span', { class: 'tag minor', text: t.assignee }) : null;
-    const del = el('button', { class: 'del', text: '✕' });
+    const del = el('button', { class: 'del', text: '✕', 'aria-label': 'Delete ' + t.text });
     del.addEventListener('click', () => { sharedUpdate(t.id, { deleted: true }); renderTasks(); scheduleSync(); toast('Deleted', { actionLabel: 'Undo', onAction: () => { sharedUpdate(t.id, { deleted: false }); renderTasks(); scheduleSync(); } }); });
-    list.append(el('li', {}, el('label', { class: 'check', style: 'margin:0;flex:1' }, box, label), who, del));
+    list.append(el('li', { class: 'task-row' }, el('label', { class: 'check', style: 'margin:0;flex:1;min-width:0' }, box, label), who, del));
   }
   if (!tasks.length) list.append(el('li', { class: 'muted small', text: 'No tasks yet.' }));
 }
@@ -2474,10 +2508,10 @@ $('btn-import-preview').addEventListener('click', () => {
   if (!n && !errs) return setStatus('import-status', 'Nothing to add — paste some lines first.');
   const bits = [];
   const c = importParsed;
-  const label = (arr, name) => arr.length && bits.push(`${arr.length} ${name}`);
-  label(c.subscriptions, 'subscription(s)'); label(c.utilities, 'utility plan(s)'); label(c.documents, 'document(s)');
-  label(c.deliveries, 'delivery/deliveries'); label(c.events, 'event(s)'); label(c.loyalty, 'loyalty card(s)'); label(c.checkups, 'check-up(s)');
-  label(c.maintenance, 'maintenance item(s)'); label(c.shopping, 'shopping item(s)');
+  const label = (arr, one, many = one + 's') => arr.length && bits.push(`${arr.length} ${arr.length === 1 ? one : many}`);
+  label(c.subscriptions, 'subscription'); label(c.utilities, 'utility plan'); label(c.documents, 'document');
+  label(c.deliveries, 'delivery', 'deliveries'); label(c.events, 'event'); label(c.loyalty, 'loyalty card'); label(c.checkups, 'check-up');
+  label(c.maintenance, 'maintenance item'); label(c.shopping, 'shopping item'); label(c.trips, 'trip'); label(c.bookings, 'travel booking');
   if (Object.keys(c.vehicle).length) bits.push('car details');
   setStatus('import-status', `Ready to add: ${bits.join(', ') || 'nothing'}.${errs ? ` ${errs} line(s) not understood will be skipped.` : ''}`);
 });
@@ -2512,7 +2546,9 @@ function applyParsedImport(r) {
   add(CHECK_KEY, r.checkups, (c) => ({ id: uid(), ...c }));
   add(MAINT_KEY, r.maintenance, (m) => ({ id: uid(), ...m }));
   addUnique('shop', r.shopping.map((text) => ({ text })), (i) => (i.done ? '' : (i.text || '').trim().toLowerCase()), { done: false });
-  if (addedShared.length) scheduleSync();
+  const addedBookings = [];
+  importTravel(r, addedShared, addedBookings);
+  if (addedShared.length || addedBookings.length) scheduleSync();
   let vehicleSnap = null;
   if (Object.keys(r.vehicle).length) {
     vehicleSnap = JSON.parse(JSON.stringify(loadVehicle()));
@@ -2527,12 +2563,13 @@ function applyParsedImport(r) {
     if (vehicleSnap) saveVehicle(vehicleSnap);
     // Shared items are removed (not rolled back) so the removal syncs too.
     for (const id of addedShared) sharedRemove(id);
-    if (addedShared.length) scheduleSync();
+    for (const { tripId, bookingId } of addedBookings) { const t = trips().find((x) => x.id === tripId); if (t) sharedUpdate(tripId, { bookings: (t.bookings || []).filter((b) => b.id !== bookingId) }); }
+    if (addedShared.length || addedBookings.length) scheduleSync();
     rerender();
   };
   // Count what was actually added (things already there, or deleted before, are skipped).
   const localAdded = r.subscriptions.length + r.documents.length + r.loyalty.length + r.checkups.length + r.maintenance.length + Object.keys(r.vehicle).length;
-  return { count: localAdded + addedShared.length, undo };
+  return { count: localAdded + addedShared.length + addedBookings.length, undo };
 }
 
 $('btn-import-apply').addEventListener('click', () => {
@@ -2714,7 +2751,7 @@ $('btn-backup').addEventListener('click', async () => {
   const vaultBlob = vault.backupBlob();
   if (!vaultBlob) return;
   setStatus('security-status', 'Preparing backup…');
-  const bundle = { app: 'evergreen-backup', v: 1, vault: vaultBlob, photos: await exportAllPhotos().catch(() => ({})) };
+  const bundle = { app: 'evergreen-backup', v: 1, vault: vaultBlob, photos: await exportAllPhotos().catch(() => ({})), files: await exportPrivateFiles().catch(() => ({})) };
   const url = URL.createObjectURL(new Blob([JSON.stringify(bundle)], { type: 'application/json' }));
   const a = document.createElement('a');
   a.href = url;
@@ -2734,6 +2771,7 @@ $('restore-file').addEventListener('change', async (e) => {
     const vaultBlob = parsed.app === 'evergreen-backup' ? parsed.vault : parsed; // new bundle or legacy raw blob
     await vault.restore(vaultBlob, pass);
     if (parsed.app === 'evergreen-backup' && parsed.photos) await importAllPhotos(parsed.photos);
+    if (parsed.app === 'evergreen-backup' && parsed.files) await importPrivateFiles(parsed.files).catch(() => {});
     disableBiometric(); // it held the passphrase from before the restore
     refreshBiometricButtons();
     initAll();
@@ -2833,6 +2871,8 @@ function confirmImport(r) {
   const lines = [
     ...r.deliveries.map((d) => `📦 ${d.item || 'Parcel'}${d.carrier ? ' · ' + d.carrier : ''}${d.expected ? ' · ' + fmtDate(d.expected) : ''}`),
     ...r.events.map((e) => `📅 ${e.title} · ${e.date ? fmtDate(e.date) : 'no date'}${e.time ? ' ' + e.time : ''}`),
+    ...(r.trips || []).map((t) => `🧳 ${t.title}${t.start ? ' · ' + fmtDate(t.start) : ''}`),
+    ...(r.bookings || []).map((b) => `${BOOKING_KINDS[b.kind]?.icon || '📌'} ${bookingSummary(b).title}`),
     ...r.shopping.map((t) => `🛒 ${t}`),
     ...r.subscriptions.map((x) => `🔁 ${x.name} · £${x.cost}`),
     ...r.utilities.map((u) => `⚡ ${u.type} · ${u.provider || ''}`),
@@ -2850,7 +2890,8 @@ function confirmImport(r) {
   add.addEventListener('click', () => {
     closeSheet();
     const { count, undo } = applyParsedImport(r);
-    if (r.deliveries.length) goLife('deliveries');
+    if ((r.trips || []).length || (r.bookings || []).length) goLife('travel');
+    else if (r.deliveries.length) goLife('deliveries');
     if (!count) return toast('Already in Evergreen — nothing new to add.');
     toast(`Added ${count} item${count === 1 ? '' : 's'} ✓`, { actionLabel: 'Undo', onAction: undo, ms: 8000 });
   });
@@ -3023,13 +3064,434 @@ $('btn-cal-disconnect').addEventListener('click', () => {
 const persistCalHide = debounce((v) => { saveSettings({ calHide: v }); pullCalendar(true).catch(() => {}); }, 900);
 $('cal-hide').addEventListener('input', (e) => persistCalHide(e.target.value));
 
+// ---------- files: attach documents and photos to things ----------
+// Shared things (trips, family, utilities) keep their files encrypted on your own
+// sync server, so both phones can open them. Private things (documents, home,
+// health) keep them encrypted on this phone only. Items just hold a small list:
+// files: [{ blobId | fileId, name, type, size, addedAt, by, local? }]
+const fileThumbs = new Map(); // file id -> object URL (reused while the app is open)
+const fileKeyOf = (f) => f.blobId || f.fileId;
+const fileIcon = (f) => (/pdf/.test(f.type) ? '📕' : /^image\//.test(f.type) ? '🖼️' : /word|document|text/.test(f.type) ? '📘' : /sheet|excel|csv/.test(f.type) ? '📗' : '📄');
+async function fileBlob(f) {
+  if (f.local) {
+    if (!mediaKey) throw new Error('Unlock Evergreen first.');
+    const b = await loadPrivateFile(f.fileId, mediaKey, f.type);
+    if (!b) throw new Error("That file isn't on this phone (private files stay on the phone that added them).");
+    return b;
+  }
+  if (!paired()) throw new Error('Set up Sharing & sync to open shared files.');
+  const s = settings();
+  return downloadSharedFile({ serverUrl: s.syncUrl, code: s.householdCode, blobId: f.blobId, type: f.type });
+}
+async function fileUrl(f) {
+  const k = fileKeyOf(f);
+  if (!fileThumbs.has(k)) fileThumbs.set(k, URL.createObjectURL(await fileBlob(f)));
+  return fileThumbs.get(k);
+}
+function dropFiles(files = [], delayMs = 0) {
+  if (!files.length) return;
+  setTimeout(() => {
+    for (const f of files) {
+      if (f.local) deletePrivateFile(f.fileId).catch(() => {});
+      else if (paired()) { const s = settings(); deleteSharedFile({ serverUrl: s.syncUrl, code: s.householdCode, blobId: f.blobId }).catch(() => {}); }
+    }
+  }, delayMs);
+}
+// Photos are shrunk (but kept readable for documents); PDFs and other files go as they are.
+async function prepareUpload(file) {
+  const isImage = /^image\//.test(file.type) || /\.(jpe?g|png|heic|heif|webp)$/i.test(file.name || '');
+  if (!isImage || /gif|svg/.test(file.type)) return file;
+  const dataUrl = await compressImage(file, 2000, 0.78);
+  const blob = await (await fetch(dataUrl)).blob();
+  const base = (file.name || 'Photo').replace(/\.[^.]+$/, '') || 'Photo';
+  return new File([blob], base + '.jpg', { type: 'image/jpeg' });
+}
+async function addFile(file, shared) {
+  const prepared = await prepareUpload(file);
+  const tooBig = checkFileSize(prepared);
+  if (tooBig) throw new Error(tooBig);
+  if (shared) {
+    if (!paired()) throw new Error('Shared files are stored on your sync server — set up Life → Sharing & sync first.');
+    const s = settings();
+    const meta = await uploadSharedFile({ serverUrl: s.syncUrl, code: s.householdCode, file: prepared });
+    return { blobId: meta.blobId, name: meta.name, type: meta.type, size: meta.size, addedAt: meta.addedAt, by: myName() };
+  }
+  if (!mediaKey) throw new Error('Unlock Evergreen first.');
+  const meta = await savePrivateFile(prepared, mediaKey);
+  return { ...meta, by: myName() };
+}
+function pickFile(onFile) {
+  // Kept in the page: iPhones can silently drop a file chosen through a detached input.
+  const input = el('input', { type: 'file', accept: 'image/*,application/pdf,.pdf,.doc,.docx,.txt', style: 'position:fixed;left:-9999px;width:1px;height:1px;opacity:0' });
+  document.body.append(input);
+  const cleanup = () => setTimeout(() => input.remove(), 1000);
+  input.addEventListener('cancel', cleanup);
+  input.addEventListener('change', () => { const f = input.files[0]; cleanup(); if (f) onFile(f); });
+  input.click();
+}
+const fileSize = (n) => (n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB');
+/**
+ * A row of file tiles with "+ Add". `get()` returns the current list, `save(list)` stores it.
+ * shared: true → stored on your sync server for both phones; false → this phone only.
+ */
+function filesStrip({ get, save, shared, hint }) {
+  const box = el('div', { class: 'files' });
+  const row = el('div', { class: 'files-row' });
+  const note = el('div', { class: 'files-note', text: hint || (shared ? '🔒 Shared with your partner · encrypted' : '🔒 Only on this phone · encrypted') });
+  const draw = () => {
+    row.replaceChildren();
+    for (const f of get() || []) {
+      const tile = el('button', { class: 'file-tile', type: 'button', 'aria-label': 'Open ' + f.name },
+        el('span', { class: 'file-ico', text: fileIcon(f) }), el('span', { class: 'file-name', text: f.name }));
+      if (/^image\//.test(f.type)) {
+        fileUrl(f).then((u) => { tile.style.backgroundImage = `url("${u}")`; tile.classList.add('thumb'); }).catch(() => {});
+      }
+      tile.addEventListener('click', () => openFileViewer(f, () => { save((get() || []).filter((x) => fileKeyOf(x) !== fileKeyOf(f))); dropFiles([f]); draw(); }));
+      row.append(tile);
+    }
+    const add = el('button', { class: 'file-tile file-add', type: 'button', 'aria-label': 'Add a photo or file' }, el('span', { class: 'file-ico', text: '＋' }), el('span', { class: 'file-name', text: 'Photo / file' }));
+    add.addEventListener('click', () => pickFile(async (file) => {
+      add.disabled = true;
+      add.querySelector('.file-name').textContent = 'Adding…';
+      try {
+        const meta = await addFile(file, shared);
+        save([...(get() || []), meta]);
+        haptic();
+        toast(`${meta.name} added ✓`);
+      } catch (e) {
+        toast(e.message || "Couldn't add that file.", { ms: 7000 });
+      }
+      draw();
+    }));
+    row.append(add);
+  };
+  draw();
+  box.append(row, note);
+  return box;
+}
+function openFileViewer(f, onDelete) {
+  const view = el('div', { class: 'file-viewer', role: 'dialog', 'aria-label': f.name });
+  const body = el('div', { class: 'file-view-body' }, el('p', { class: 'muted', text: 'Opening…' }));
+  const close = () => view.remove();
+  const btnClose = el('button', { class: 'primary', text: 'Close' });
+  btnClose.addEventListener('click', close);
+  const btnShare = el('button', { text: navigator.share ? 'Share / save' : 'Download' });
+  const btnOpen = el('button', { text: 'Open' });
+  const btnDel = el('button', { class: 'link', style: 'color:var(--urgent, #c0392b)', text: 'Delete' });
+  btnDel.addEventListener('click', () => {
+    if (!confirm(`Delete ${f.name}${f.local ? '' : ' from both phones'}?`)) return;
+    close(); onDelete(); toast(`${f.name} deleted`);
+  });
+  view.append(el('div', { class: 'file-view-top' }, el('div', {}, el('div', { class: 'name', text: f.name }),
+    el('div', { class: 'sub', text: [fileSize(f.size || 0), f.addedAt ? 'added ' + new Date(f.addedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '', f.by && f.by !== 'Me' ? 'by ' + f.by : ''].filter(Boolean).join(' · ') })), btnClose),
+  body, el('div', { class: 'row file-view-actions' }, btnOpen, btnShare, btnDel));
+  document.body.append(view);
+  fileBlob(f).then((blob) => {
+    const url = fileThumbs.get(fileKeyOf(f)) || URL.createObjectURL(blob);
+    fileThumbs.set(fileKeyOf(f), url);
+    body.replaceChildren(/^image\//.test(f.type) ? el('img', { src: url, alt: f.name })
+      : el('div', { class: 'file-big-ico' }, el('div', { text: fileIcon(f) }), el('p', { class: 'muted small', text: 'Tap Open to view it, or Share / save to keep a copy or send it on.' })));
+    btnOpen.addEventListener('click', () => { const w = window.open(url, '_blank'); if (!w) location.assign(url); });
+    btnShare.addEventListener('click', async () => {
+      const file = new File([blob], f.name, { type: f.type });
+      try {
+        if (navigator.canShare && navigator.canShare({ files: [file] })) return await navigator.share({ files: [file], title: f.name });
+      } catch (e) { if (e.name === 'AbortError') return; }
+      const a = el('a', { href: url, download: f.name }); document.body.append(a); a.click(); a.remove();
+    });
+  }).catch((e) => body.replaceChildren(el('p', { class: 'status bad', text: e.message || "Couldn't open that file." })));
+}
+
+/** A collapsed "📎 Files" row that only draws (and downloads thumbnails) when opened. */
+function lazyFiles({ get, save, shared, hint }) {
+  const label = (n) => `📎 Documents & photos${n ? ` (${n})` : ''}`;
+  const sum = el('summary', { text: label((get() || []).length) });
+  const d = el('details', { class: 'inner files-details' }, sum);
+  d.addEventListener('toggle', () => {
+    if (!d.open || d.dataset.drawn) return;
+    d.dataset.drawn = '1';
+    if (hint) d.append(el('p', { class: 'muted small', text: hint }));
+    d.append(filesStrip({ shared, get, save: (list) => { save(list); sum.textContent = label(list.length); } }));
+  });
+  return d;
+}
+/** Files for an item in one of this phone's private lists. */
+const privateFiles = (key, id, hint) => lazyFiles({ shared: false, hint,
+  get: () => (store.load(key, []).find((x) => x.id === id) || {}).files || [],
+  save: (list) => store.save(key, store.load(key, []).map((x) => (x.id === id ? { ...x, files: list } : x))) });
+
+// ---------- Travel: trips, bookings and the pre-trip checks (shared) ----------
+const trips = () => sharedItems('trip');
+function upcomingTrip() {
+  const today = todayISO();
+  return trips().filter((t) => t.end && t.end >= today).sort((a, b) => (a.start < b.start ? -1 : 1))[0] || null;
+}
+const tripFlag = (t) => flag((t.destinations || [])[0]?.iso);
+const dt = (s) => {
+  if (!s) return '';
+  if (s.length <= 10) return new Date(s + 'T00:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+  return new Date(s).toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+};
+const tm = (s) => (s && s.length > 10 ? s.slice(11, 16) : '');
+const tripDates = (t) => {
+  if (!t.start) return '';
+  const a = new Date(t.start + 'T00:00:00'), b = new Date((t.end || t.start) + 'T00:00:00');
+  const same = a.getFullYear() === b.getFullYear();
+  return `${a.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', ...(same ? {} : { year: 'numeric' }) })} – ${b.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}`;
+};
+const travellerNames = (t) => {
+  const people = children();
+  const ids = t.travellers && t.travellers.length ? t.travellers : people.map((p) => p.id);
+  return people.filter((p) => ids.includes(p.id)).map((p) => p.name);
+};
+function bookingSummary(b) {
+  switch (b.kind) {
+    case 'flight': return { title: `${b.flightNo || 'Flight'}${b.from || b.to ? ` ${b.from || '?'} → ${b.to || '?'}` : ''}`, sub: [b.airline, b.depart ? `departs ${dt(b.depart)}` : '', b.arrive ? `lands ${tm(b.arrive) || dt(b.arrive)}` : '', b.seats ? `seats ${b.seats}` : '', b.bags].filter(Boolean).join(' · ') };
+    case 'stay': return { title: b.name || 'Hotel', sub: [b.checkIn ? `in ${dt(b.checkIn)}` : '', b.checkOut ? `out ${dt(b.checkOut)}` : '', b.address].filter(Boolean).join(' · ') };
+    case 'car': return { title: `Car hire${b.company ? ' — ' + b.company : ''}`, sub: [b.pickUp ? `collect ${dt(b.pickUp)}${b.pickUpPlace ? ' at ' + b.pickUpPlace : ''}` : '', b.dropOff ? `return ${dt(b.dropOff)}${b.dropOffPlace ? ' at ' + b.dropOffPlace : ''}` : ''].filter(Boolean).join(' · ') };
+    case 'transport': return { title: `${b.operator || b.mode || 'Transport'}${b.to ? ` → ${b.to}` : ''}`, sub: [b.mode, b.from ? `from ${b.from}` : '', b.depart ? dt(b.depart) : ''].filter(Boolean).join(' · ') };
+    case 'insurance': return { title: `Travel insurance${b.provider ? ' — ' + b.provider : ''}`, sub: [b.policyNo ? `policy ${b.policyNo}` : '', b.coverFrom ? `cover ${fmtDate(b.coverFrom)}${b.coverTo ? ' – ' + fmtDate(b.coverTo) : ''}` : ''].filter(Boolean).join(' · ') };
+    default: return { title: b.title || 'Booking', sub: b.depart ? dt(b.depart) : '' };
+  }
+}
+function renderTravel() {
+  const out = $('trip-list');
+  if (!out) return;
+  out.replaceChildren();
+  const today = todayISO();
+  const all = trips().sort((a, b) => ((a.start || '9') < (b.start || '9') ? -1 : 1));
+  const coming = all.filter((t) => !t.end || t.end >= today);
+  const past = all.filter((t) => t.end && t.end < today).reverse();
+  if (!coming.length) out.append(el('p', { class: 'muted small', text: 'No trips coming up. Tap “+ Add a trip” — or paste booking emails into Quick import.' }));
+  for (const t of coming) out.append(tripCard(t, today));
+  if (past.length) {
+    const d = el('details', { class: 'inner' }, el('summary', { text: `Past trips (${past.length})` }));
+    for (const t of past) d.append(tripCard(t, today));
+    out.append(d);
+  }
+}
+function tripCard(t, today) {
+  const checks = tripChecks(t, children(), today);
+  const next = timeline(t).find((b) => b.when && b.when.slice(0, 10) >= today && b.kind !== 'insurance');
+  const card = el('button', { class: 'card trip-card', type: 'button' },
+    el('div', { class: 'trip-head' }, el('span', { class: 'trip-flag', text: tripFlag(t) }),
+      el('div', {}, el('div', { class: 'name', text: t.title || 'Trip' }), el('div', { class: 'sub', text: [tripDates(t), tripStatus(t, today)].filter(Boolean).join(' · ') }))),
+    travellerNames(t).length ? el('div', { class: 'trip-people' }, ...travellerNames(t).map((n) => el('span', { class: 'chip', text: n }))) : null,
+    next ? el('div', { class: 'trip-next' }, el('span', { class: 'muted small', text: 'Next: ' }), `${BOOKING_KINDS[next.kind]?.icon || '📌'} ${bookingSummary(next).title} · ${dt(next.when)}`) : null,
+    checks.length ? el('div', { class: 'trip-warns' }, ...checks.filter((c) => c.level !== 'info').slice(0, 3).map((c) => el('span', { class: 'tag ' + (c.level === 'urgent' ? 'urgent' : 'soon'), text: { passport: 'Passport', auth: 'Authorisation', ghic: 'GHIC', insurance: 'No insurance', checkin: 'Check in', advice: 'Entry rules' }[c.kind] || 'Check' }))) : null,
+    (t.files || []).length ? el('div', { class: 'muted small', style: 'margin-top:6px', text: `📎 ${t.files.length} file${t.files.length === 1 ? '' : 's'}` }) : null);
+  card.addEventListener('click', () => openTrip(t.id));
+  return card;
+}
+function copyRow(label, value) {
+  const b = el('button', { class: 'child-copy', type: 'button', text: value, title: 'Tap to copy' });
+  b.addEventListener('click', (e) => { e.stopPropagation(); copyValue(value, label); });
+  return b;
+}
+function openTrip(id) {
+  const t = trips().find((x) => x.id === id);
+  if (!t) return toast('That trip has been removed.');
+  const today = todayISO();
+  const nodes = [el('div', { class: 'sheet-tag', text: 'Trip · shared with your partner' }),
+    el('h2', {}, `${tripFlag(t)} ${t.title || 'Trip'}`),
+    el('p', { class: 'muted', text: [tripDates(t), tripStatus(t, today)].filter(Boolean).join(' · ') })];
+  const names = travellerNames(t);
+  if (names.length) nodes.push(el('p', { class: 'small', text: '👥 ' + names.join(', ') }));
+  const ins = (t.bookings || []).find((b) => b.kind === 'insurance');
+  if (ins && (ins.emergencyPhone || ins.policyNo)) {
+    nodes.push(el('div', { class: 'state-note trip-emergency' }, el('strong', { text: '🆘 Emergency assistance' }),
+      ins.emergencyPhone ? el('div', {}, el('a', { href: 'tel:' + ins.emergencyPhone.replace(/[^\d+]/g, ''), text: ins.emergencyPhone })) : null,
+      ins.policyNo ? el('div', { class: 'small' }, `${ins.provider || 'Policy'}: `, copyRow('Policy number', ins.policyNo)) : null));
+  }
+  const checks = tripChecks(t, children(), today);
+  if (checks.length) {
+    const list = el('ul', { class: 'trip-checks' });
+    for (const c of checks) list.append(el('li', { class: c.level }, el('span', { text: c.text }), c.url ? el('a', { href: c.url, target: '_blank', rel: 'noopener', text: /nhs\.uk/.test(c.url) ? ' Apply on NHS.UK ›' : ' Check on GOV.UK ›' }) : null));
+    nodes.push(el('h3', { class: 'sheet-h', text: 'Before you go' }), list,
+      el('p', { class: 'muted small', text: 'Guidance only — always check GOV.UK travel advice for your destination before you travel.' }));
+  }
+  nodes.push(el('h3', { class: 'sheet-h', text: 'Bookings' }));
+  const tl = timeline(t);
+  if (!tl.length) nodes.push(el('p', { class: 'muted small', text: 'No bookings yet — add flights, hotels, car hire and insurance.' }));
+  for (const b of tl) {
+    const s = bookingSummary(b);
+    const row = el('div', { class: 'booking' },
+      el('span', { class: 'booking-ico', text: BOOKING_KINDS[b.kind]?.icon || '📌' }),
+      el('div', { class: 'booking-main' }, el('div', { class: 'name', text: s.title }), s.sub ? el('div', { class: 'sub', text: s.sub }) : null,
+        b.ref ? el('div', { class: 'small' }, 'Ref ', copyRow('Booking reference', b.ref)) : null,
+        b.phone ? el('div', { class: 'small' }, el('a', { href: 'tel:' + b.phone.replace(/[^\d+]/g, ''), text: '📞 ' + b.phone })) : null,
+        b.notes ? el('div', { class: 'sub', text: b.notes }) : null));
+    const edit = el('button', { class: 'link', type: 'button', text: 'Edit' });
+    edit.addEventListener('click', () => openBookingEditor(t.id, b));
+    row.append(edit);
+    nodes.push(row);
+  }
+  const addB = el('button', { type: 'button', text: '+ Add a booking' });
+  addB.addEventListener('click', () => openBookingEditor(t.id));
+  nodes.push(addB);
+  nodes.push(el('h3', { class: 'sheet-h', text: 'Tickets & documents' }),
+    filesStrip({ shared: true, get: () => trips().find((x) => x.id === id)?.files || [], save: (files) => { sharedUpdate(id, { files }); scheduleSync(); renderTravel(); } }));
+  if (t.notes) nodes.push(el('h3', { class: 'sheet-h', text: 'Notes' }), el('p', { class: 'child-notes', text: t.notes }));
+  const edit = el('button', { type: 'button', text: 'Edit trip' });
+  edit.addEventListener('click', () => openTripEditor(t));
+  const close = el('button', { class: 'primary', type: 'button', text: 'Close' });
+  close.addEventListener('click', closeSheet);
+  nodes.push(el('div', { class: 'row', style: 'margin-top:14px' }, edit, close));
+  openSheet(...nodes);
+}
+function openTripEditor(trip) {
+  const t = trip || {};
+  const title = el('input', { type: 'text', placeholder: 'e.g. Mallorca half-term' }); title.value = t.title || '';
+  const where = el('input', { type: 'text', placeholder: 'e.g. Spain (or Mallorca, Paris, Florida)' });
+  where.value = (t.destinations || []).map((d) => d.country || countryName(d.iso)).join(', ');
+  const start = el('input', { type: 'date' }); start.value = t.start || '';
+  const end = el('input', { type: 'date' }); end.value = t.end || '';
+  start.addEventListener('change', () => { if (!end.value || end.value < start.value) end.value = start.value; });
+  const hint = el('p', { class: 'muted small', style: 'margin:-6px 0 8px' });
+  const showHint = () => {
+    const parts = where.value.split(',').map((s) => s.trim()).filter(Boolean);
+    const unknown = parts.filter((p) => !countryCode(p));
+    hint.textContent = parts.length ? (unknown.length ? `Evergreen doesn't know ${unknown.join(', ')} — passport checks will use the cautious 6-month rule. Try the country's name.` : parts.map((p) => `${flag(countryCode(p))} ${countryName(countryCode(p), p)}`).join(', ')) : '';
+  };
+  where.addEventListener('input', showHint); showHint();
+  const people = children();
+  const chosen = new Set(t.travellers && t.travellers.length ? t.travellers : people.map((p) => p.id));
+  const who = el('div', { class: 'trip-people' }, ...people.map((p) => {
+    const cb = el('input', { type: 'checkbox' }); cb.checked = chosen.has(p.id);
+    cb.addEventListener('change', () => (cb.checked ? chosen.add(p.id) : chosen.delete(p.id)));
+    return el('label', { class: 'chip chip-check' }, cb, ' ' + p.name);
+  }));
+  const notes = el('textarea', { rows: '3', placeholder: 'e.g. Kennel booked for the dog; parking at Gatwick South' }); notes.value = t.notes || '';
+  const save = el('button', { class: 'primary', type: 'button', text: trip ? 'Save' : 'Add trip' });
+  save.addEventListener('click', () => {
+    if (!title.value.trim()) { title.focus(); return toast('Give the trip a name.'); }
+    if (!start.value) { start.focus(); return toast('Add the date you leave.'); }
+    const destinations = where.value.split(',').map((s) => s.trim()).filter(Boolean).map((country) => ({ country, iso: countryCode(country) }));
+    const data = { title: title.value.trim(), destinations, start: start.value, end: end.value || start.value, travellers: people.length && chosen.size === people.length ? [] : [...chosen], notes: notes.value.trim() };
+    let id = t.id;
+    if (trip) sharedUpdate(trip.id, data); else id = sharedAdd('trip', { ...data, bookings: [], files: [] });
+    scheduleSync(); renderTravel(); renderCalendar(); renderHome(); haptic();
+    toast(trip ? 'Trip saved ✓' : 'Trip added ✓');
+    openTrip(id);
+  });
+  const cancel = el('button', { type: 'button', text: 'Cancel' });
+  cancel.addEventListener('click', () => (trip ? openTrip(trip.id) : closeSheet()));
+  const nodes = [el('h2', { text: trip ? 'Edit trip' : 'Add a trip' }),
+    el('label', { class: 'field' }, 'Trip name', title),
+    el('label', { class: 'field' }, 'Where to', where), hint,
+    el('div', { class: 'grid2' }, el('label', { class: 'field' }, 'Leave', start), el('label', { class: 'field' }, 'Back', end)),
+    people.length ? el('div', { class: 'field' }, "Who's going", who) : el('p', { class: 'muted small', text: 'Add everyone in Family (with passport dates) and Evergreen will check their passports for this trip.' }),
+    el('label', { class: 'field' }, 'Notes', notes),
+    el('div', { class: 'row' }, cancel, save)];
+  if (trip) {
+    const del = el('button', { class: 'link', type: 'button', style: 'color:var(--urgent, #c0392b);margin-top:8px', text: 'Delete this trip' });
+    del.addEventListener('click', () => {
+      if (!confirm(`Delete “${t.title}”, its bookings and files from both phones?`)) return;
+      sharedRemove(trip.id); dropFiles(t.files || []); scheduleSync(); renderTravel(); renderCalendar(); renderHome(); closeSheet();
+      toast('Trip deleted');
+    });
+    nodes.push(del);
+  }
+  openSheet(...nodes);
+}
+const BOOKING_FIELDS = {
+  flight: [['airline', 'Airline', 'text', 'e.g. British Airways'], ['flightNo', 'Flight number', 'text', 'e.g. BA2650'], ['from', 'From (airport)', 'text', 'e.g. LGW'], ['to', 'To (airport)', 'text', 'e.g. PMI'], ['depart', 'Departs (local time)', 'datetime-local'], ['arrive', 'Lands (local time)', 'datetime-local'], ['ref', 'Booking reference', 'text'], ['seats', 'Seats', 'text', 'e.g. 12A, 12B'], ['bags', 'Bags', 'text', 'e.g. 2 × 23 kg hold']],
+  stay: [['name', 'Hotel / place', 'text'], ['address', 'Address', 'text'], ['checkIn', 'Check in', 'datetime-local'], ['checkOut', 'Check out', 'datetime-local'], ['ref', 'Booking reference', 'text'], ['phone', 'Phone', 'tel']],
+  car: [['company', 'Company', 'text', 'e.g. Hertz'], ['pickUpPlace', 'Collect from', 'text'], ['pickUp', 'Collect', 'datetime-local'], ['dropOffPlace', 'Return to', 'text'], ['dropOff', 'Return', 'datetime-local'], ['ref', 'Booking reference', 'text'], ['phone', 'Phone', 'tel']],
+  transport: [['mode', 'Type', 'text', 'e.g. train, ferry, transfer'], ['operator', 'Operator', 'text', 'e.g. Eurostar'], ['from', 'From', 'text'], ['to', 'To', 'text'], ['depart', 'Departs', 'datetime-local'], ['arrive', 'Arrives', 'datetime-local'], ['ref', 'Booking reference', 'text']],
+  insurance: [['provider', 'Insurer', 'text'], ['policyNo', 'Policy number', 'text'], ['emergencyPhone', '24-hour emergency number', 'tel'], ['coverFrom', 'Cover from', 'date'], ['coverTo', 'Cover to', 'date']],
+  other: [['title', 'What', 'text', 'e.g. Theme park tickets'], ['depart', 'When', 'datetime-local'], ['ref', 'Reference', 'text']],
+};
+function openBookingEditor(tripId, booking) {
+  const b = booking || {};
+  const kind = el('select', {}, ...Object.entries(BOOKING_KINDS).map(([k, v]) => el('option', { value: k, text: `${v.icon} ${v.label}` })));
+  kind.value = b.kind || 'flight';
+  const box = el('div', {});
+  const inputs = {};
+  const draw = () => {
+    box.replaceChildren();
+    for (const k of Object.keys(inputs)) delete inputs[k];
+    for (const [k, label, type, ph] of BOOKING_FIELDS[kind.value]) {
+      const input = el('input', { type, autocomplete: 'off', ...(ph ? { placeholder: ph } : {}) });
+      input.value = b[k] || '';
+      inputs[k] = input;
+      box.append(el('label', { class: 'field' }, label, input));
+    }
+  };
+  kind.addEventListener('change', draw); draw();
+  const notes = el('textarea', { rows: '2', placeholder: 'optional' }); notes.value = b.notes || '';
+  const save = el('button', { class: 'primary', type: 'button', text: booking ? 'Save' : 'Add' });
+  save.addEventListener('click', () => {
+    const t = trips().find((x) => x.id === tripId);
+    if (!t) return closeSheet();
+    const data = { id: b.id || 'b' + uid(), kind: kind.value, notes: notes.value.trim() };
+    for (const [k, input] of Object.entries(inputs)) data[k] = input.value.trim();
+    if (data.flightNo) data.flightNo = data.flightNo.toUpperCase().replace(/\s+/g, '');
+    for (const k of ['from', 'to']) if (kind.value === 'flight' && data[k]) data[k] = data[k].toUpperCase();
+    const bookings = (t.bookings || []).filter((x) => x.id !== data.id).concat(data);
+    sharedUpdate(tripId, { bookings });
+    scheduleSync(); renderTravel(); renderCalendar(); renderHome(); haptic();
+    toast(booking ? 'Booking saved ✓' : 'Booking added ✓');
+    openTrip(tripId);
+  });
+  const cancel = el('button', { type: 'button', text: 'Cancel' });
+  cancel.addEventListener('click', () => openTrip(tripId));
+  const nodes = [el('h2', { text: booking ? 'Edit booking' : 'Add a booking' }), el('label', { class: 'field' }, 'Type', kind), box,
+    el('label', { class: 'field' }, 'Notes', notes), el('div', { class: 'row' }, cancel, save)];
+  if (booking) {
+    const del = el('button', { class: 'link', type: 'button', style: 'color:var(--urgent, #c0392b);margin-top:8px', text: 'Remove this booking' });
+    del.addEventListener('click', () => {
+      const t = trips().find((x) => x.id === tripId);
+      if (t) sharedUpdate(tripId, { bookings: (t.bookings || []).filter((x) => x.id !== b.id) });
+      scheduleSync(); renderTravel(); renderCalendar(); renderHome(); openTrip(tripId); toast('Booking removed');
+    });
+    nodes.push(del);
+  }
+  openSheet(...nodes);
+}
+// Quick import: trips first, then each booking joins the trip its dates fall in (or starts a new one).
+function importTravel(r, addedShared, addedBookings) {
+  for (const row of r.trips) {
+    if (!row.start) continue;
+    const dup = trips().find((t) => t.start === row.start && (t.title || '').toLowerCase() === (row.title || '').toLowerCase());
+    if (dup) continue;
+    const iso = countryCode(row.country || row.title);
+    addedShared.push(sharedAdd('trip', { title: row.title || 'Trip', destinations: row.country || iso ? [{ country: row.country || countryName(iso), iso }] : [], start: row.start, end: row.end || row.start, travellers: [], notes: '', bookings: [], files: [] }));
+  }
+  const bookingKey = (b) => [b.kind, b.ref, b.flightNo, b.name, b.provider, b.depart || b.checkIn || b.pickUp || b.coverFrom].map((x) => (x || '').toLowerCase()).join('|');
+  for (const b of r.bookings) {
+    const start = (b.depart || b.checkIn || b.pickUp || b.coverFrom || '').slice(0, 10);
+    const finish = (b.arrive || b.checkOut || b.dropOff || b.coverTo || start).slice(0, 10);
+    if (!start) continue;
+    let t = matchTrip(trips(), start);
+    if (!t) {
+      const place = b.kind === 'flight' ? b.to : b.kind === 'stay' ? b.address || b.name : b.to || '';
+      const iso = countryCode(place || '');
+      const id = sharedAdd('trip', { title: `Trip${iso ? ' to ' + countryName(iso) : place ? ' to ' + place : ''}`, destinations: iso ? [{ country: countryName(iso), iso }] : [], start, end: finish || start, travellers: [], notes: '', bookings: [], files: [] });
+      addedShared.push(id);
+      t = trips().find((x) => x.id === id);
+    }
+    if ((t.bookings || []).some((x) => bookingKey(x) === bookingKey(b))) continue;
+    const booking = { ...b, id: 'b' + uid() };
+    const patch = { bookings: [...(t.bookings || []), booking] };
+    if (finish && finish > (t.end || '')) patch.end = finish;
+    if (start < (t.start || '9')) patch.start = start;
+    sharedUpdate(t.id, patch);
+    addedBookings.push({ tripId: t.id, bookingId: booking.id });
+  }
+}
+$('btn-trip-add')?.addEventListener('click', () => openTripEditor());
+
 // ---------- Family: key details for the children (shared, encrypted) ----------
 const CHILD_GROUPS = [
   { group: 'Identity', fields: [
     { k: 'nhs', label: 'NHS number', secret: true, inputmode: 'numeric' },
     { k: 'passport', label: 'Passport number', secret: true },
+    { k: 'passportIssued', label: 'Passport issued', type: 'date', quiet: true },
     { k: 'passportExpiry', label: 'Passport expires', type: 'date' },
-    { k: 'birthCert', label: 'Birth certificate no.', secret: true },
+    { k: 'ghicExpiry', label: 'GHIC expires', type: 'date' },
+    { k: 'birthCert', label: 'Birth certificate no.', secret: true, child: true },
+    { k: 'licenceExpiry', label: 'Driving licence photocard expires', type: 'date', adult: true },
   ] },
   { group: 'Health', fields: [
     { k: 'blood', label: 'Blood group' },
@@ -3041,18 +3503,20 @@ const CHILD_GROUPS = [
     { k: 'dentist', label: 'Dentist' },
     { k: 'dentistPhone', label: 'Dentist phone', type: 'tel' },
   ] },
-  { group: 'School', fields: [
+  { group: 'School', child: true, fields: [
     { k: 'school', label: 'School / nursery' },
     { k: 'class', label: 'Class / year' },
     { k: 'teacher', label: 'Teacher' },
     { k: 'schoolPhone', label: 'School phone', type: 'tel' },
   ] },
-  { group: 'Sizes', fields: [
+  { group: 'Sizes', child: true, fields: [
     { k: 'clothes', label: 'Clothes size' },
     { k: 'shoes', label: 'Shoe size' },
   ] },
 ];
-const children = () => sharedItems('child').sort((a, b) => ((a.dob || '9') < (b.dob || '9') ? -1 : 1)); // oldest first
+// Everyone in Family (children, and grown-ups added for passport checks), oldest first.
+const children = () => sharedItems('child').sort((a, b) => (!!b.adult - !!a.adult) || ((a.dob || '9') < (b.dob || '9') ? -1 : 1));
+const groupsFor = (c) => CHILD_GROUPS.filter((g) => !(g.child && c.adult)).map((g) => ({ ...g, fields: g.fields.filter((f) => !(f.child && c.adult) && !(f.adult && !c.adult)) }));
 const looksSecret = (v) => /\d{4,}/.test(String(v).replace(/\s/g, ''));
 function copyValue(v, label) {
   navigator.clipboard?.writeText(String(v)).then(() => toast(`${label} copied`), () => toast('Could not copy'));
@@ -3075,7 +3539,7 @@ function renderFamily() {
     let hideTimer = null;
     const draw = () => {
       body.replaceChildren();
-      const groups = CHILD_GROUPS.map((g) => ({ group: g.group, rows: g.fields.filter((f) => c[f.k]).map((f) => ({ ...f, value: c[f.k] })) }));
+      const groups = groupsFor(c).map((g) => ({ group: g.group, rows: g.fields.filter((f) => c[f.k]).map((f) => ({ ...f, value: c[f.k] })) }));
       const extras = (c.extras || []).filter((x) => x && x.label && x.value).map((x) => ({ k: x.label, label: x.label, value: x.value, secret: looksSecret(x.value) }));
       if (extras.length) groups.push({ group: 'Other details', rows: extras });
       let any = false;
@@ -3087,7 +3551,7 @@ function renderFamily() {
           let node;
           if (f.type === 'date') {
             const cd = countdown(f.value, '');
-            node = el('span', {}, fmtDate(f.value), cd && cd.days <= 180 ? el('span', { class: 'tag ' + (cd.days < 0 ? 'urgent' : 'soon'), style: 'margin-left:6px', text: cd.days < 0 ? 'expired' : `${cd.days} days` }) : null);
+            node = el('span', {}, fmtDate(f.value), cd && !f.quiet && cd.days <= 180 ? el('span', { class: 'tag ' + (cd.days < 0 ? 'urgent' : 'soon'), style: 'margin-left:6px', text: cd.days < 0 ? 'expired' : `${cd.days} days` }) : null);
           } else if (f.type === 'tel') {
             node = el('a', { href: 'tel:' + String(f.value).replace(/[^\d+]/g, ''), text: f.value });
           } else if (f.secret && !revealed) {
@@ -3111,14 +3575,17 @@ function renderFamily() {
       draw();
     });
     draw();
+    if (!groupsFor(c).some((g) => g.fields.some((f) => f.secret && c[f.k])) && !(c.extras || []).some((x) => looksSecret(x.value))) show.hidden = true;
     const edit = el('button', { text: 'Edit' });
     edit.addEventListener('click', () => openChildEditor(c));
-    card.append(body, el('div', { class: 'row', style: 'margin-top:12px' }, edit));
+    const files = lazyFiles({ shared: true, hint: 'e.g. birth certificate, passport photo page, Red Book pages, vaccination record.',
+      get: () => sharedItems('child').find((x) => x.id === c.id)?.files || [], save: (list) => { sharedUpdate(c.id, { files: list }); scheduleSync(); } });
+    card.append(body, files, el('div', { class: 'row', style: 'margin-top:12px' }, edit));
     out.append(card);
   }
 }
-function openChildEditor(child) {
-  const c = child || {};
+function openChildEditor(child, { adult = false } = {}) {
+  const c = child || { adult };
   const inputs = {};
   const field = (f) => {
     const input = el('input', { type: f.type || 'text', autocomplete: 'off', ...(f.inputmode ? { inputmode: f.inputmode } : {}) });
@@ -3126,7 +3593,7 @@ function openChildEditor(child) {
     inputs[f.k] = input;
     return el('label', { class: 'field' }, f.label, input);
   };
-  const name = el('input', { type: 'text', autocomplete: 'off', placeholder: 'e.g. Maddy' }); name.value = c.name || '';
+  const name = el('input', { type: 'text', autocomplete: 'off', placeholder: c.adult ? 'e.g. Jess' : 'e.g. Maddy' }); name.value = c.name || '';
   const dob = el('input', { type: 'date' }); dob.value = c.dob || '';
   const nhsHint = el('p', { class: 'muted small', style: 'margin:-6px 0 8px' });
   const notes = el('textarea', { rows: '3', placeholder: 'Anything else worth knowing — e.g. Red Book is in the kitchen drawer' }); notes.value = c.notes || '';
@@ -3143,7 +3610,7 @@ function openChildEditor(child) {
   (c.extras || []).forEach(addExtra);
   const moreBtn = el('button', { class: 'link', text: '+ Add another detail' });
   moreBtn.addEventListener('click', () => addExtra());
-  const sections = CHILD_GROUPS.map((g) => el('details', { class: 'inner', ...(g.group === 'Identity' ? { open: '' } : {}) }, el('summary', { text: g.group }), ...g.fields.map(field)));
+  const sections = groupsFor(c).map((g) => el('details', { class: 'inner', ...(g.group === 'Identity' ? { open: '' } : {}) }, el('summary', { text: g.group }), ...g.fields.map(field)));
   const checkNhs = () => {
     const v = inputs.nhs.value.trim();
     nhsHint.textContent = v && !nhsNumberValid(v) ? "That doesn't look like a valid NHS number — check the digits (it's 10 digits, e.g. 943 476 5919)." : '';
@@ -3156,13 +3623,14 @@ function openChildEditor(child) {
   cancel.addEventListener('click', closeSheet);
   save.addEventListener('click', () => {
     if (!name.value.trim()) { name.focus(); return toast('Add their name.'); }
-    const data = { name: name.value.trim(), dob: dob.value, notes: notes.value.trim(), extras: [...extrasBox.children].map((r) => r._get()).filter((x) => x.label && x.value) };
+    const data = { adult: !!c.adult, name: name.value.trim(), dob: dob.value, notes: notes.value.trim(), extras: [...extrasBox.children].map((r) => r._get()).filter((x) => x.label && x.value) };
     for (const [k, input] of Object.entries(inputs)) data[k] = input.value.trim();
     if (child) sharedUpdate(child.id, data); else sharedAdd('child', data);
     scheduleSync(); renderFamily(); renderCalendar(); renderHome(); closeSheet(); haptic();
     toast(child ? 'Saved ✓' : `${data.name} added ✓`);
   });
-  const nodes = [el('h2', { text: child ? `Edit ${c.name}` : 'Add a child' }),
+  const nodes = [el('h2', { text: child ? `Edit ${c.name}` : c.adult ? 'Add a grown-up' : 'Add a child' }),
+    c.adult && !child ? el('p', { class: 'muted small', text: 'Add yourselves so Evergreen can check your passports and GHICs for trips. Shared with your partner and encrypted.' }) : null,
     el('label', { class: 'field' }, 'Name', name), el('label', { class: 'field' }, 'Date of birth', dob),
     ...sections,
     el('details', { class: 'inner' }, el('summary', { text: 'Other details' }), extrasBox, moreBtn),
@@ -3172,7 +3640,7 @@ function openChildEditor(child) {
     const del = el('button', { class: 'link', style: 'color:var(--urgent, #c0392b);margin-top:8px', text: `Remove ${c.name}` });
     del.addEventListener('click', () => {
       if (!confirm(`Remove ${c.name} and all their details from both phones?`)) return;
-      sharedRemove(child.id); scheduleSync(); renderFamily(); renderCalendar(); renderHome(); closeSheet();
+      sharedRemove(child.id); dropFiles(c.files || []); scheduleSync(); renderFamily(); renderCalendar(); renderHome(); closeSheet();
       toast(`${c.name} removed`);
     });
     nodes.push(del);
@@ -3180,6 +3648,7 @@ function openChildEditor(child) {
   openSheet(...nodes);
 }
 $('btn-child-add').addEventListener('click', () => openChildEditor(null));
+$('btn-adult-add').addEventListener('click', () => openChildEditor(null, { adult: true }));
 
 // ---------- Official car details (DVLA) + MOT history (DVSA) via your sync server ----------
 const CAR_REFRESH_MS = 7 * 86400000;
@@ -3362,6 +3831,7 @@ $('wipe-after').addEventListener('change', (e) => {
 function wipeThisPhone(reason = 'lost') {
   try { vault.destroy(); } catch { /* ignore */ }
   try { indexedDB.deleteDatabase('evergreen-media'); } catch { /* ignore */ }
+  try { indexedDB.deleteDatabase('evergreen-files'); } catch { /* ignore */ }
   try { localStorage.clear(); } catch { /* ignore */ }
   try { caches.keys().then((ks) => ks.forEach((k) => caches.delete(k))); } catch { /* ignore */ }
   location.replace(location.pathname + '?wiped=' + reason);
@@ -3467,7 +3937,7 @@ function renderLost() {
 
 // ---------- app updates ----------
 // Must match CACHE in sw.js (a test checks this).
-const APP_VERSION = 'evergreen-v57';
+const APP_VERSION = 'evergreen-v58';
 let updateReady = false;
 async function checkForUpdate(manual = false) {
   try {
@@ -3532,6 +4002,7 @@ async function initAll() {
   renderDocs();
   renderDeliveries();
   renderFamily();
+  renderTravel();
   renderCalendar();
   initLifeSections();
   renderHome();

@@ -502,3 +502,58 @@ button:active:not(:disabled), .btn-a:active { transform: translateY(1px); }
 .mot-defect { display: flex; gap: 8px; align-items: flex-start; margin: 6px 0; font-size: 14px; }
 .mot-defect .tag { flex: 0 0 auto; }
 #car-keys-help code { font-size: 13px; word-break: break-all; }
+
+/* Everyday inputs outside a .field (shopping, to-do) look like the rest */
+#shared-input, #task-input, #task-assignee, .row > input[type=text] { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; min-height: 48px; }
+input[type=checkbox] { accent-color: var(--accent); width: 22px; height: 22px; flex: 0 0 auto; }
+.task-row { display: flex; align-items: center; gap: 8px; }
+.toast button { color: #6ee7a8; white-space: nowrap; }
+/* The back bar already names the open section */
+#tab-life h3[id^="sec-"]:not(.sec-off) { display: none; }
+.list li.tappable { cursor: pointer; }
+.list li.tappable .sub::after { content: ' ›'; color: var(--accent); font-weight: 700; }
+
+/* Files: documents & photos attached to things */
+.files { margin-top: 8px; }
+.files-row { display: flex; gap: 8px; overflow-x: auto; padding: 2px 0 6px; -webkit-overflow-scrolling: touch; }
+.file-tile { flex: 0 0 76px; width: 76px; height: 76px; min-height: 0; padding: 6px 4px; border-radius: 12px; border: 1px solid var(--line); background: var(--bg) center / cover no-repeat; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; position: relative; overflow: hidden; }
+.file-tile .file-ico { font-size: 24px; line-height: 1; }
+.file-tile .file-name { font-size: 11px; line-height: 1.2; color: var(--muted); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file-tile.thumb .file-ico { visibility: hidden; }
+.file-tile.thumb .file-name { position: absolute; left: 0; right: 0; bottom: 0; padding: 2px 4px; background: rgba(0,0,0,.55); color: #fff; }
+.file-add { border-style: dashed; border-color: var(--accent); }
+.file-add .file-ico, .file-add .file-name { color: var(--accent); }
+.files-note { font-size: 12px; color: var(--muted); }
+.files-details > summary { font-size: 14px; color: var(--accent); font-weight: 600; }
+.file-viewer { position: fixed; inset: 0; z-index: 60; background: var(--card); display: flex; flex-direction: column; padding: max(14px, env(safe-area-inset-top)) 16px max(14px, env(safe-area-inset-bottom)); }
+.file-view-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.file-view-top .primary { width: auto; flex: 0 0 auto; }
+.file-view-top .name { overflow-wrap: anywhere; }
+.file-view-body { flex: 1; display: flex; align-items: center; justify-content: center; overflow: auto; margin: 12px 0; }
+.file-view-body img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 8px; }
+.file-big-ico { text-align: center; font-size: 64px; }
+.file-view-actions { gap: 8px; }
+
+/* Travel */
+.trip-card { display: block; width: 100%; text-align: left; font: inherit; color: inherit; cursor: pointer; }
+.trip-head { display: flex; align-items: center; gap: 12px; }
+.trip-flag { font-size: 34px; line-height: 1; }
+.trip-head .name { font-size: 18px; font-weight: 700; }
+.trip-people { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.chip { display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; border-radius: 999px; background: var(--btn); font-size: 13px; color: var(--text); }
+.chip-check { cursor: pointer; min-height: 36px; }
+.chip-check input { width: 18px; height: 18px; margin: 0; }
+.trip-next { margin-top: 10px; font-size: 14px; }
+.trip-warns { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.sheet-h { margin: 18px 0 6px; font-size: 13px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); }
+.trip-checks { list-style: none; margin: 0; padding: 0; }
+.trip-checks li { padding: 8px 10px; border-radius: 10px; margin-bottom: 6px; font-size: 14px; background: var(--soon-bg); color: var(--text); }
+.trip-checks li.urgent { background: var(--urgent-bg); }
+.trip-checks li.info { background: var(--minor-bg); }
+.trip-checks a { color: var(--accent); font-weight: 600; white-space: nowrap; }
+.trip-emergency { margin: 10px 0; }
+.trip-emergency a { font-size: 18px; font-weight: 700; color: var(--urgent); }
+.booking { display: flex; gap: 10px; align-items: flex-start; padding: 10px 0; border-top: 1px solid var(--line); }
+.booking-ico { font-size: 22px; line-height: 1.2; }
+.booking-main { flex: 1; min-width: 0; }
+.booking .link { width: auto; flex: 0 0 auto; }

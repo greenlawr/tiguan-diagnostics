@@ -26,11 +26,22 @@ export function iso(s) {
   }
   return day && mon && yr ? ymd(yr, mon, day) : '';
 }
+/** "2027-02-13 08:40" / "13/02/2027 8:40" → "2027-02-13T08:40" (local time, as printed on the booking). */
+export function isoDateTime(s) {
+  const t = String(s || '').trim();
+  const m = t.match(/^(.*?)[\sT,]+(\d{1,2})[:.](\d{2})\s*(am|pm)?$/i);
+  if (!m) return iso(t);
+  const d = iso(m[1]);
+  if (!d) return '';
+  let h = +m[2];
+  if (m[4]) { if (/pm/i.test(m[4]) && h < 12) h += 12; if (/am/i.test(m[4]) && h === 12) h = 0; }
+  return h < 24 ? `${d}T${String(h).padStart(2, '0')}:${m[3]}` : d;
+}
 const cycle = (c) => { const w = (c || '').toLowerCase(); return /year|annual|yr/.test(w) ? 'yearly' : /week/.test(w) ? 'weekly' : 'monthly'; };
 
 /** @returns grouped entries plus any lines that couldn't be understood. */
 export function parseImport(text) {
-  const r = { subscriptions: [], utilities: [], documents: [], deliveries: [], loyalty: [], checkups: [], maintenance: [], shopping: [], events: [], vehicle: {}, errors: [] };
+  const r = { subscriptions: [], utilities: [], documents: [], deliveries: [], loyalty: [], checkups: [], maintenance: [], shopping: [], events: [], trips: [], bookings: [], vehicle: {}, errors: [] };
   const lines = (text || '').split(/\r?\n/).map((l) => l.trim()).filter((l) => l && !l.startsWith('#'));
   for (const line of lines) {
     const m = line.match(/^([a-z][a-z \-]*):\s*(.*)$/i);
@@ -43,6 +54,16 @@ export function parseImport(text) {
       case 'document': r.documents.push({ label: p[0], category: p[1] || 'Other', expiry: iso(p[2]), note: p[3] || '' }); break;
       case 'delivery': r.deliveries.push({ item: p[0], carrier: p[1] || 'Other', tracking: p[2] || '', expected: iso(p[3]) }); break;
       case 'event': r.events.push({ title: p[0], date: iso(p[1]), time: p[2] || '', where: p[3] || '' }); break;
+      case 'trip': case 'holiday': r.trips.push({ title: p[0], country: p[1] || '', start: iso(p[2]), end: iso(p[3]) }); break;
+      case 'flight': r.bookings.push({ kind: 'flight', flightNo: (p[0] || '').toUpperCase().replace(/\s+/g, ''), airline: p[1] || '', from: (p[2] || '').toUpperCase(), to: (p[3] || '').toUpperCase(), depart: isoDateTime(p[4]), arrive: isoDateTime(p[5]), ref: p[6] || '', seats: p[7] || '', bags: p[8] || '' }); break;
+      case 'stay': case 'hotel': r.bookings.push({ kind: 'stay', name: p[0], address: p[1] || '', checkIn: isoDateTime(p[2]), checkOut: isoDateTime(p[3]), ref: p[4] || '', phone: p[5] || '' }); break;
+      case 'car hire': case 'car': r.bookings.push({ kind: 'car', company: p[0], pickUpPlace: p[1] || '', pickUp: isoDateTime(p[2]), dropOffPlace: p[3] || '', dropOff: isoDateTime(p[4]), ref: p[5] || '' }); break;
+      case 'transport': case 'train': case 'ferry': case 'transfer': {
+        const mode = type === 'transport' ? (p.shift() || 'transfer').toLowerCase() : type;
+        r.bookings.push({ kind: 'transport', mode, operator: p[0] || '', from: p[1] || '', to: p[2] || '', depart: isoDateTime(p[3]), arrive: isoDateTime(p[4]), ref: p[5] || '' });
+        break;
+      }
+      case 'travel insurance': r.bookings.push({ kind: 'insurance', provider: p[0], policyNo: p[1] || '', emergencyPhone: p[2] || '', coverFrom: iso(p[3]), coverTo: iso(p[4]) }); break;
       case 'loyalty': r.loyalty.push({ name: p[0], number: p[1] || '' }); break;
       case 'checkup': r.checkups.push({ type: p[0], last: iso(p[1]), interval: parseInt(p[2], 10) || 0 }); break;
       case 'maintenance': r.maintenance.push({ task: p[0], date: iso(p[1]) }); break;
@@ -63,6 +84,6 @@ export function importCount(r) {
   return (
     r.subscriptions.length + r.utilities.length + r.documents.length + r.deliveries.length +
     r.loyalty.length + r.checkups.length + r.maintenance.length + r.shopping.length +
-    r.events.length + Object.keys(r.vehicle).length
+    r.events.length + r.trips.length + r.bookings.length + Object.keys(r.vehicle).length
   );
 }

@@ -1,6 +1,6 @@
 // Pure logic for the life-admin sections: UK tax estimates, subscriptions,
 // health due-dates, meter usage. All figures are rough guides (England,
-// 2025/26 thresholds) — not advice.
+// 2026/27; income tax and NI thresholds are frozen) — not advice.
 
 // ---------- tax estimators ----------
 const PERSONAL_ALLOWANCE = 12570;
@@ -35,9 +35,19 @@ export function employeeNI(income) {
  * Rough dividend tax, with dividends stacked on top of other income.
  * Order of the stack: any unused Personal Allowance covers dividends at 0%,
  * then the £500 dividend allowance (0%, but it still uses up band space),
- * then 8.75% / 33.75% / 39.35%. The allowance tapers above £100k.
+ * then the dividend rates. The allowance tapers above £100k.
+ * Rates: 8.75% / 33.75% / 39.35% up to 2025/26; from 6 April 2026 the basic
+ * and higher rates rose to 10.75% / 35.75% (Autumn Budget 2025).
  */
-export function dividendTax(otherIncome, dividends) {
+export function taxYearOf(date = new Date()) {
+  const y = date.getFullYear();
+  return date >= new Date(y, 3, 6) ? y : y - 1; // 2026 means 2026/27
+}
+export function dividendRates(taxYear = taxYearOf()) {
+  return taxYear >= 2026 ? [0.1075, 0.3575, 0.3935] : [0.0875, 0.3375, 0.3935];
+}
+export function dividendTax(otherIncome, dividends, taxYear = taxYearOf()) {
+  const [basicRate, higherRate, addRate] = dividendRates(taxYear);
   const pa = personalAllowance(otherIncome + dividends);
   const basicTop = pa + BASIC_BAND;
   let pos = otherIncome;
@@ -53,9 +63,9 @@ export function dividendTax(otherIncome, dividends) {
   const allowance = Math.min(remaining, 500);
   pos += allowance;
   remaining -= allowance;
-  take(basicTop, 0.0875);
-  take(ADDITIONAL_THRESHOLD, 0.3375);
-  take(Infinity, 0.3935);
+  take(basicTop, basicRate);
+  take(ADDITIONAL_THRESHOLD, higherRate);
+  take(Infinity, addRate);
   return Math.round(tax);
 }
 

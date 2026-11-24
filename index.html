@@ -106,6 +106,7 @@
         <p class="muted small" style="margin:0">Type your registration and Evergreen fills in the official DVLA details and MOT history by itself. Your registration is only used for that lookup; everything else on this tab stays on this phone.</p>
       </div>
       <div id="official-out"></div>
+      <div id="car-files"></div>
 
       <h3>Renewals</h3>
       <div class="card">
@@ -224,14 +225,21 @@
 
       <h3 id="sec-family">Family</h3>
       <div class="card">
-        <p class="muted small">Key details for your children in one place — shared with your partner and encrypted. Numbers stay hidden until you tap <em>Show numbers</em>; tap a number to copy it. Birthdays appear in the family calendar, and passport renewals on Home.</p>
-        <button id="btn-child-add" class="primary">+ Add a child</button>
+        <p class="muted small">Key details for your children in one place — shared with your partner and encrypted. Numbers stay hidden until you tap <em>Show numbers</em>; tap a number to copy it. Birthdays appear in the family calendar, and passport renewals on Home. Add yourselves too, so trips can check everyone's passport.</p>
+        <div class="row"><button id="btn-child-add" class="primary">+ Add a child</button><button id="btn-adult-add">+ Add a grown-up</button></div>
       </div>
       <div id="family-list"></div>
 
+      <h3 id="sec-travel">Travel</h3>
+      <div class="card">
+        <p class="muted small">Trips, flights, hotels, car hire and travel insurance in one place — shared with your partner and encrypted. Add boarding passes and confirmations as files. Evergreen checks everyone's passport against the destination's rules and reminds you about insurance, the GHIC and online check-in. Trips show in the family calendar.</p>
+        <button id="btn-trip-add" class="primary">+ Add a trip</button>
+      </div>
+      <div id="trip-list"></div>
+
       <h3 id="sec-deliveries">Deliveries</h3>
       <div class="card">
-        <p class="muted small">Add a parcel to see it on your dashboard with a link to the courier's live tracking. Tip: from Amazon or an email, tap Share → My Life to add it quickly.</p>
+        <p class="muted small">Add a parcel to see it on your dashboard with a link to the courier's live tracking. Tip: from Amazon or an email, tap Share → Evergreen to add it quickly.</p>
         <details class="inner-form" id="del-form">
           <summary>Add a delivery</summary>
           <label class="field">What is it?<input id="del-item" type="text" placeholder="e.g. Running shoes"></label>
@@ -248,7 +256,7 @@
       <h3 id="sec-documents">Documents</h3>
       <div class="card">
         <h2>Documents &amp; reminders</h2>
-        <p class="muted">Keep track of anything with an expiry date — passport, driving licence, insurance, warranties, subscriptions. Add a photo if you like. Everything stays on this phone.</p>
+        <p class="muted">Keep track of anything with an expiry date — passport, driving licence, insurance, warranties. Attach a scan or PDF if you like. Your documents stay on this phone, encrypted.</p>
         <details class="inner-form" id="doc-form">
           <summary>Add a document</summary>
           <button id="btn-scan-passport" type="button">📷 Scan a document</button>
@@ -330,7 +338,7 @@
       </div>
       <div class="card">
         <h2>Quick estimates</h2>
-        <p class="muted small">Rough guides for England, 2025/26. Not tax advice.</p>
+        <p class="muted small">Rough guides for England, 2026/27 tax year (dividend rates rose from April 2026). Not tax advice.</p>
         <label class="field">Salary (£/year)<input id="tax-salary" type="number" inputmode="numeric" placeholder="e.g. 45000"></label>
         <div id="tax-salary-out" class="grid"></div>
         <label class="field" style="margin-top:12px">Dividends on top (£)<input id="tax-div" type="number" inputmode="numeric" placeholder="e.g. 20000"></label>
@@ -569,7 +577,7 @@ shopping: milk, bread, eggs</pre>
 
 <details class="card" id="security-card">
         <summary>Security &amp; backup</summary>
-        <p class="muted">Your data is encrypted on this phone with your passphrase. It never leaves the device. There is no cloud copy, so keep a backup and don't forget your passphrase — it can't be recovered.</p>
+        <p class="muted">Your data is encrypted on this phone with your passphrase. Only the things you share with your partner (lists, calendar, family, travel, utilities) go to your own sync server — and only encrypted, so the server can't read them. Your private sections have no cloud copy, so keep a backup and don't forget your passphrase — it can't be recovered.</p>
         <button id="btn-backup" class="primary">Save encrypted backup</button>
         <button id="btn-restore">Restore from a backup</button>
         <input id="restore-file" type="file" accept="application/json,.json" hidden>
