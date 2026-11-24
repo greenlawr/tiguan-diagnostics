@@ -1458,8 +1458,7 @@ function renderToday(out) {
   const todays = upcomingEvents(0);
   const week = upcomingEvents(6).filter((e) => e.date !== today);
   const card = el('div', { class: 'card today-card' },
-    el('div', { class: 'today-head' }, el('h2', { text: 'Today' }),
-      el('span', { class: 'muted small', text: new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' }) })));
+    el('div', { class: 'today-head' }, el('h2', { text: 'Family calendar' })));
   if (todays.length) card.append(eventCards(todays, true));
   else card.append(el('p', { class: 'muted', style: 'margin:4px 0 0', text: 'Nothing in the calendar today.' }));
   if (week.length) {
@@ -1488,6 +1487,68 @@ function renderToday(out) {
   out.append(card);
 }
 
+
+// ----- the daily briefing at the top of Home: only what matters today -----
+function briefingCard(items) {
+  const lines = []; // { icon, text, level, go }
+  const now = new Date();
+  const today = todayISO();
+  const evening = now.getHours() >= 18;
+  // Weather (and any Met Office warning)
+  const place = (settings().weatherPlace || 'Berkhamsted').trim();
+  const w = ((settings().infoCache || {})['hw:' + place.toLowerCase()] || {}).value;
+  if (w && w.now) {
+    const nowISO = localNowISO();
+    const wet = (w.hours || []).filter((h) => h.t >= nowISO.slice(0, 13)).slice(0, 12).find((h) => h.rain >= 50);
+    const d0 = (w.days || [])[0];
+    lines.push({ icon: WX(w.now.code), text: `${Math.round(w.now.temp)}° now${d0 ? `, high ${Math.round(d0.max)}°` : ''} — ${wet ? `rain likely ${wet.t.slice(11, 13) === nowISO.slice(11, 13) ? 'now' : 'from ' + wet.t.slice(11, 16)}, take a coat` : 'staying dry'}` });
+    const terms = [w.county, w.region].filter(Boolean);
+    const warn = (((settings().infoCache || {})['warn:' + terms.join('|').toLowerCase()] || {}).value || {}).warnings || [];
+    for (const x of warn.slice(0, 1)) lines.push({ icon: '⚠️', text: x.title, level: x.level === 'yellow' ? 'soon' : 'urgent' });
+  }
+  // Calendar: today (or tomorrow, in the evening)
+  const dayISO = evening ? isoPlus(today, 1) : today;
+  const evs = upcomingEvents(evening ? 1 : 0).filter((e) => e.date === dayISO && !(e.time && dayISO === today && e.time < now.toTimeString().slice(0, 5)));
+  if (evs.length) {
+    const first = evs[0];
+    lines.push({ icon: '📅', text: `${evening ? 'Tomorrow' : 'Today'}: ${evs.length === 1 ? '' : evs.length + ' things — '}${/^\d/.test(first.time || '') ? first.time + ' ' : ''}${first.title}${evs.length > 1 ? ' first' : ''}`, go: () => goLife('calendar') });
+  }
+  // Parcels due
+  const parcels = sharedItems('delivery').filter((d) => !d.done && d.expected && d.expected <= (evening ? isoPlus(today, 1) : today) && d.expected >= isoPlus(today, -1));
+  if (parcels.length) lines.push({ icon: '📦', text: parcels.length === 1 ? `Parcel ${parcels[0].expected === today ? 'arriving today' : parcels[0].expected > today ? 'arriving tomorrow' : 'was due yesterday'}: ${parcels[0].item}` : `${parcels.length} parcels due`, go: () => goLife('deliveries') });
+  // Trip soon / away
+  const t = upcomingTrip();
+  if (t && daysBetween(today, t.start) <= 3) lines.push({ icon: tripFlag(t), text: `${t.title}: ${tripStatus(t, today)}`, go: () => openTrip(t.id) });
+  // Trains
+  const tb = settings().trainBad;
+  if (tb && tb.n && Date.now() - tb.at < 30 * 60000) lines.push({ icon: '🚆', text: `${tb.n} train${tb.n === 1 ? '' : 's'} delayed or cancelled on your route`, level: 'soon', go: () => goLife('trains') });
+  // Overdue / urgent, then due this week
+  const urgent = items.filter((i) => i.level === 'urgent' && i.sub !== 'Delivery');
+  for (const i of urgent.slice(0, 2)) lines.push({ icon: '❗', text: `${i.label}${i.days < 0 ? ' — overdue' : i.text && !/^\d/.test(i.text) ? ` — ${i.text.replace(i.label + ' ', '')}` : ''}`, level: 'urgent', go: i.go });
+  const week = items.filter((i) => i.level !== 'urgent' && i.days >= 0 && i.days <= 7 && i.sub !== 'Delivery');
+  if (week.length) lines.push({ icon: '🗓️', text: `Due this week: ${week.slice(0, 3).map((i) => i.label).join(', ')}${week.length > 3 ? ` +${week.length - 3}` : ''}`, level: 'soon' });
+  // Lists
+  const shop = sharedItems('shop').filter((i) => !i.done).length, tasks = sharedItems('task').filter((i) => !i.done).length;
+  if (shop || tasks) lines.push({ icon: '🛒', text: [shop ? `${shop} on the shopping list` : '', tasks ? `${tasks} to-do${tasks === 1 ? '' : 's'}` : ''].filter(Boolean).join(' · '), go: () => goLife(shop ? 'shopping' : 'tasks') });
+
+  const name = myName() !== 'Me' ? `, ${myName()}` : '';
+  const level = lines.some((l) => l.level === 'urgent') ? 'urgent' : lines.some((l) => l.level === 'soon') ? 'soon' : 'ok';
+  const card = el('div', { class: 'verdict briefing ' + level },
+    el('div', { class: 'headline', text: `${greeting()}${name}` }),
+    el('div', { class: 'muted small', text: now.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' }) }));
+  if (!lines.length) card.append(el('p', { text: 'Nothing pressing today — you’re on top of things.' }));
+  else {
+    const ul = el('ul', { class: 'brief-list' });
+    for (const l of lines.slice(0, 7)) {
+      const li = el('li', { class: l.level || '' }, el('span', { class: 'brief-ico', text: l.icon }), el('span', { text: l.text }));
+      if (l.go) { li.classList.add('tappable'); li.addEventListener('click', l.go); }
+      ul.append(li);
+    }
+    card.append(ul);
+  }
+  return card;
+}
+
 function renderDashboard() {
   const out = $('dashboard');
   if (!out) return;
@@ -1504,21 +1565,10 @@ function renderDashboard() {
   }
   items.push(...collectExtraReminders());
   items.sort((a, b) => a.days - b.days);
-  const pressing = items.filter((i) => i.level === 'urgent' || i.level === 'soon').length;
-  const summary = !items.length
-    ? 'Nothing with a date yet — add renewals or documents below and they\'ll show here.'
-    : pressing
-      ? `${pressing} thing${pressing === 1 ? ' needs' : 's need'} attention soon.`
-      : 'Nothing pressing — you\'re on top of things.';
-  const card = el('div', { class: 'verdict ' + (items[0]?.level === 'urgent' ? 'urgent' : pressing ? 'soon' : 'ok') },
-    el('div', { class: 'headline', text: greeting() }),
-    el('p', { text: summary })
-  );
-  out.replaceChildren();
+  out.replaceChildren(briefingCard(items));
   renderToday(out);
   const wx = weatherCard();
   if (wx) out.append(wx);
-  out.append(card);
 
   if (isAppEmpty()) out.append(welcomeCard());
 
@@ -4501,7 +4551,7 @@ function renderLost() {
 
 // ---------- app updates ----------
 // Must match CACHE in sw.js (a test checks this).
-const APP_VERSION = 'evergreen-v61';
+const APP_VERSION = 'evergreen-v62';
 let updateReady = false;
 async function checkForUpdate(manual = false) {
   try {
