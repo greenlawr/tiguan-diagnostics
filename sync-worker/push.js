@@ -78,14 +78,14 @@ const listKey = (hid) => 'push:' + hid;
 export async function pushList(env, hid) { try { return JSON.parse((await env.HOUSEHOLD.get(listKey(hid))) || '[]'); } catch { return []; } }
 
 /** Tell every other phone in the household that something changed. */
-export async function notifyOthers(env, hid, fromDevice, { added, changed }, fetchImpl = fetch) {
+export async function notifyOthers(env, hid, fromDevice, { added, changed, body: fixed }, fetchImpl = fetch) {
   const list = await pushList(env, hid);
   const targets = list.filter((p) => p.device !== fromDevice);
   if (!targets.length) return 0;
   let gone = [];
   await Promise.all(targets.map(async (p) => {
     const who = p.label || 'Your partner';
-    const body = added ? `${who} added ${added === 1 ? 'something' : added + ' things'} — tap to see` : `${who} updated ${changed === 1 ? 'something' : changed + ' things'} — tap to see`;
+    const body = fixed ? fixed : added ? `${who} added ${added === 1 ? 'something' : added + ' things'} — tap to see` : `${who} updated ${changed === 1 ? 'something' : changed + ' things'} — tap to see`;
     try { const r = await sendPush(env, p.sub, { title: 'Evergreen', body }, fetchImpl); if (r.gone) gone.push(p.device); } catch { /* try next time */ }
   }));
   if (gone.length) await env.HOUSEHOLD.put(listKey(hid), JSON.stringify(list.filter((p) => !gone.includes(p.device))));

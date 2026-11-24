@@ -251,6 +251,12 @@
       <h3 id="sec-deliveries">Deliveries</h3>
       <div class="card">
         <p class="muted small">Add a parcel to see it on your dashboard with a link to the courier's live tracking. Tip: from Amazon or an email, tap Share → Evergreen to add it quickly.</p>
+        <details class="inner" id="inbox-card">
+          <summary>📬 Parcels from your email, automatically</summary>
+          <p class="muted small">Each morning Claude checks your email for parcels and drops them straight into Evergreen — no link to tap. They're sealed so only your two phones can open them; your sync server just holds them until a phone collects them.</p>
+          <button id="btn-inbox-setup" type="button">Set up</button>
+          <div id="inbox-out"></div>
+        </details>
         <details class="inner-form" id="del-form">
           <summary>Add a delivery</summary>
           <label class="field">What is it?<input id="del-item" type="text" placeholder="e.g. Running shoes"></label>

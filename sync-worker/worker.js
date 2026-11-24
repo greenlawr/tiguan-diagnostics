@@ -6,6 +6,7 @@
 
 import { handleInfo } from './info.js';
 import { handlePush, notifyOthers } from './push.js';
+import { dropMessage, handleInbox, deleteInbox } from './inbox.js';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -182,6 +183,25 @@ export default {
       return json(r.body, r.status || 200);
     }
 
+    // Inbox for the morning parcel check: POST /inbox/<id> drops a sealed message;
+    // phones use /inbox/register, /inbox/list, /inbox/ack with the household key.
+    const inboxMatch = url.pathname.match(/\/inbox\/([a-z0-9]+)\/?$/);
+    if (inboxMatch && ['register', 'list', 'ack'].includes(inboxMatch[1])) {
+      const hid = url.searchParams.get('h') || '';
+      if (!/^[a-f0-9]{16,64}$/.test(hid) || !(await env.HOUSEHOLD.get(hid))) return json({ error: 'unknown household — sync once first' }, 403);
+      if (!(await authorised(request, env, hid))) return json({ error: 'not allowed' }, 401);
+      const r = await handleInbox(request, env, hid, inboxMatch[1]);
+      return json(r.body, r.status || 200);
+    }
+    if (inboxMatch && request.method === 'POST' && /^[a-f0-9]{32}$/.test(inboxMatch[1])) {
+      const r = await dropMessage(request, env, inboxMatch[1]);
+      if (r.hid) {
+        const job = notifyOthers(env, r.hid, '', { body: '📦 New parcel from your email — tap to add it' }).catch(() => {});
+        if (ctx && ctx.waitUntil) ctx.waitUntil(job); else await job;
+      }
+      return json(r.body, r.status || 200);
+    }
+
     // Notifications: GET /push/key, POST /push/subscribe|unsubscribe ?h=<household>
     const pushMatch = url.pathname.match(/\/push\/(key|subscribe|unsubscribe)\/?$/);
     if (pushMatch && (request.method === 'POST' || pushMatch[1] === 'key')) {
@@ -220,6 +240,7 @@ export default {
         await env.HOUSEHOLD.delete(hid);
         await env.HOUSEHOLD.delete('auth:' + hid);
         await env.HOUSEHOLD.delete('push:' + hid);
+        await deleteInbox(env, hid);
         await deleteAllBlobs(env, hid);
         return json({ ok: true });
       }

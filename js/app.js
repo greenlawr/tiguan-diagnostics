@@ -25,6 +25,7 @@ import { savePhoto, loadPhoto, deletePhoto, exportAllPhotos, importAllPhotos } f
 import { parseImport, importCount } from './import.js';
 import { icon, TILE_ICON, SEC_ICON_NAME } from './icons.js';
 import { tripChecks, tripStatus, tripCalendarRows, timeline, matchTrip, countryCode, countryName, flag, daysBetween, BOOKING_KINDS, adviceSlug } from './travel.js';
+import { makeInboxKeys, newInboxId, unseal, inboxAddress } from './inbox.js';
 import { capFor, nextCap, tariffCost, compareTariffs, yearlyFromReadings, TYPICAL, REGIONS } from './energy.js';
 import { uploadSharedFile, downloadSharedFile, deleteSharedFile, savePrivateFile, loadPrivateFile, deletePrivateFile, exportPrivateFiles, importPrivateFiles, checkFileSize } from './files.js';
 
@@ -207,6 +208,7 @@ function showLifeSection(name) {
   if (name === 'trains') { renderTrains(); startTrainRefresh(); } else clearInterval(trainTimer);
   if (name === 'tax') renderCompany();
   if (name === 'sharing') renderPush();
+  if (name === 'deliveries') renderInbox();
 }
 function goLife(section) {
   pendingLifeSection = section;
@@ -2202,7 +2204,7 @@ $('btn-sync').addEventListener('click', () => syncNow());
 // signal back, and every minute while it's open. Only ever while unlocked.
 const AUTO_SYNC_MS = 60 * 1000;
 function autoSync() {
-  if (!vault.locked && !document.hidden && paired()) syncNow().then(() => pullCalendar());
+  if (!vault.locked && !document.hidden && paired()) syncNow().then(() => { pullCalendar(); checkInbox(); });
 }
 document.addEventListener('visibilitychange', autoSync);
 window.addEventListener('online', autoSync);
@@ -3967,7 +3969,82 @@ function refreshPushLabel() {
   navigator.serviceWorker.ready.then((reg) => reg.pushManager.getSubscription()).then((sub) => sub && pushRequest('subscribe', { device: deviceId(), label: partnerName() === 'Partner' ? 'Your partner' : partnerName(), sub: sub.toJSON() })).catch(() => {});
 }
 // A notification was tapped, or arrived while open → fetch the new things now.
-navigator.serviceWorker?.addEventListener('message', (e) => { if (e.data === 'evergreen-sync' && !vault.locked) syncNow(); });
+navigator.serviceWorker?.addEventListener('message', (e) => { if (e.data === 'evergreen-sync' && !vault.locked) { syncNow(); checkInbox(true); } });
+
+// ----- parcels from your email, collected from your sync server's sealed inbox -----
+const INBOX_ITEM = 'xinbox';
+const inboxItem = () => sharedItems('inboxkey')[0] || null;
+async function inboxCall(action, body) {
+  const s = settings();
+  const h = await householdId(s.householdCode);
+  const res = await fetch(`${s.syncUrl.replace(/\/+$/, '')}/inbox/${action}?h=${h}`, { method: body ? 'POST' : 'GET', cache: 'no-store', headers: { 'Content-Type': 'application/json', 'X-Evergreen-Token': await writeToken(s.householdCode) }, body: body ? JSON.stringify(body) : undefined });
+  const j = await res.json().catch(() => ({}));
+  if (res.status === 404 || j.error === 'bad id') throw new Error('Your sync server is still updating — try again in a few minutes.');
+  if (!res.ok) throw new Error(j.error || `the server returned ${res.status}`);
+  return j;
+}
+async function ensureInboxRegistered(it) {
+  if (settings().inboxRegistered === it.inboxId) return;
+  await inboxCall('register', { inboxId: it.inboxId });
+  saveSettings({ inboxRegistered: it.inboxId });
+}
+function renderInbox() {
+  const out = $('inbox-out');
+  if (!out) return;
+  const it = inboxItem();
+  $('btn-inbox-setup').hidden = !!it;
+  if (!it) { out.replaceChildren(paired() ? '' : el('p', { class: 'muted small', text: 'Set up Sharing & sync first — the inbox lives on your sync server.' })); return; }
+  const addr = inboxAddress(settings().syncUrl, it.inboxId, it.publicKey);
+  const copy = el('button', { class: 'primary', type: 'button', text: 'Copy the inbox address' });
+  copy.addEventListener('click', () => copyValue(addr, 'Inbox address'));
+  out.replaceChildren(el('p', { class: 'small', text: 'Done on this phone and your partner’s. Last step: copy the address below and paste it to Claude, so the morning check can post to it. It only lets something drop sealed parcels in — it can’t read anything.' }),
+    el('code', { class: 'inbox-addr', text: addr }), copy, el('p', { class: 'muted small', text: settings().inboxLast ? `Last parcel collected ${new Date(settings().inboxLast).toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}.` : 'Nothing collected yet.' }));
+}
+$('btn-inbox-setup')?.addEventListener('click', async () => {
+  if (!paired()) return toast('Set up Sharing & sync first.');
+  try {
+    await syncNow(); // make sure we don't already have one from your partner's phone
+    let it = inboxItem();
+    if (!it) {
+      const keys = await makeInboxKeys();
+      sharedSet({ id: INBOX_ITEM, type: 'inboxkey', inboxId: newInboxId(), publicKey: keys.publicKey, privateJwk: keys.privateJwk, updatedAt: now(), deleted: false });
+      it = inboxItem();
+      await syncNow();
+    }
+    await ensureInboxRegistered(it);
+    renderInbox(); haptic(); toast('Inbox ready ✓');
+  } catch (e) { toast(e.message || "Couldn't set up the inbox.", { ms: 7000 }); }
+});
+let inboxChecking = false, inboxCheckedAt = 0;
+async function checkInbox(force = false) {
+  const it = inboxItem();
+  if (!it || !paired() || vault.locked || inboxChecking) return;
+  if (!force && Date.now() - inboxCheckedAt < 2 * 60000) return;
+  inboxChecking = true; inboxCheckedAt = Date.now();
+  try {
+    await ensureInboxRegistered(it);
+    const { messages = [] } = await inboxCall('list');
+    if (!messages.length) return;
+    const lines = [];
+    const done = [];
+    for (const m of messages) {
+      try { lines.push(await unseal(it.privateJwk, m.sealed)); done.push(m.id); } catch { done.push(m.id); /* not for us any more */ }
+    }
+    const r = parseImport(lines.join('\n'));
+    const onlyParcels = importCount(r) === r.deliveries.length;
+    if (importCount(r)) {
+      if (onlyParcels) {
+        const { count, undo } = applyParsedImport(r);
+        if (count) toast(`📦 ${count === 1 ? 'A parcel' : count + ' parcels'} added from your email`, { actionLabel: 'Undo', onAction: undo, ms: 8000 });
+      } else confirmImport(r);
+    }
+    await inboxCall('ack', { ids: done });
+    saveSettings({ inboxLast: Date.now() });
+    renderInbox();
+  } catch (e) {
+    log('info', 'Inbox check failed: ' + e.message);
+  } finally { inboxChecking = false; }
+}
 
 // ---------- Family: key details for the children (shared, encrypted) ----------
 const CHILD_GROUPS = [
@@ -4424,7 +4501,7 @@ function renderLost() {
 
 // ---------- app updates ----------
 // Must match CACHE in sw.js (a test checks this).
-const APP_VERSION = 'evergreen-v60';
+const APP_VERSION = 'evergreen-v61';
 let updateReady = false;
 async function checkForUpdate(manual = false) {
   try {
@@ -4478,6 +4555,7 @@ async function initAll() {
   try {
     mediaKey = await vault.mediaKey();
     knownIds = new Set(Object.keys(store.load(SHARED_KEY, {}))); // what's here now counts as seen
+    setTimeout(() => checkInbox(true), 2500); // parcels the morning check dropped off
     await migratePhotos();
   } catch (e) {
     log('info', 'Media key/migrate: ' + e.message);
