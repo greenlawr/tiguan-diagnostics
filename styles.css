@@ -687,3 +687,17 @@ input[type=checkbox] { accent-color: var(--accent); width: 22px; height: 22px; f
 .emg-numbers a strong { display: block; font-size: 17px; color: var(--urgent); }
 .state-note.urgent { background: var(--urgent-bg); }
 .state-note.soon { background: var(--soon-bg); }
+/* Car sub-sections */
+.car-nav { margin-bottom: 12px; }
+.nav-pill.current { background: var(--accent); color: var(--on-accent); }
+/* Home shortcuts */
+.tile-more .tile-more-ico { font-size: 30px; line-height: 44px; height: 48px; color: var(--muted); }
+.tiles-edit { display: block; margin: 8px auto 0; width: auto; }
+.tile-picks { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 12px; margin-bottom: 12px; }
+/* In an emergency */
+.emg-person { padding: 10px 0; border-top: 1px solid var(--line); }
+.emg-person:first-child { border-top: 0; }
+.doc-to-family { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+.doc-to-family select { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; }
+.car-nav { display: flex; gap: 8px; flex-wrap: wrap; }
+.car-nav .nav-pill { flex: 0 0 auto; width: auto; }

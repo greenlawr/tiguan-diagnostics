@@ -128,7 +128,7 @@ export function icon(name) {
 }
 
 export const TILE_ICON = {
-  'Car check': 'gauge', 'My car': 'car', 'Shopping list': 'cart', 'Documents': 'doc',
+  'Car check': 'gauge', 'My car': 'car', 'Car': 'car', 'Shopping list': 'cart', 'Documents': 'doc',
   'Utilities': 'bolt', 'Money & tax': 'money', 'Home': 'house', 'Health': 'heart',
   'Deliveries': 'box', 'Loyalty': 'card', 'Trips': 'fuel', 'Settings': 'gear',
   'Calendar': 'calendar', 'Sharing': 'share', 'To-do list': 'tasks', 'Family': 'family', 'Travel': 'plane', 'Trains': 'train', 'Insurance': 'shield', 'Bills & suppliers': 'bolt',

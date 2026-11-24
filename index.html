@@ -86,6 +86,7 @@
     <!-- Check -->
     <section id="tab-check" class="tab">
       <div class="row" style="margin-bottom:12px">
+        <button class="nav-pill" data-go="car">‹ Car</button>
         <button class="nav-pill" data-go="check">Diagnostics</button>
         <button class="nav-pill" data-go="live">Live data</button>
         <button class="nav-pill" data-go="trips">Trips</button>
@@ -129,7 +130,14 @@
 
     <!-- Car hub -->
     <section id="tab-car" class="tab">
-      <div class="card">
+      <div class="row car-nav" id="car-nav">
+        <button class="nav-pill" data-car-go="overview">Overview</button>
+        <button class="nav-pill" data-car-go="costs">Running costs</button>
+        <button class="nav-pill" data-car-go="service">Service</button>
+        <button class="nav-pill" data-car-go="parking">Parking</button>
+        <button class="nav-pill" data-go="check">Diagnostics</button>
+      </div>
+      <div class="card" data-car-block="overview">
         <label class="field">Registration
           <input id="reg-input" type="text" inputmode="text" autocapitalize="characters" autocomplete="off" placeholder="e.g. AB17 CDE">
         </label>
@@ -140,7 +148,7 @@
       <div id="official-out"></div>
       <div id="car-files"></div>
 
-      <h3>Renewals</h3>
+      <h3 data-car="overview">Renewals</h3>
       <div class="card">
         <div id="renewals-out"></div>
         <div class="grid2">
@@ -157,14 +165,14 @@
         <p class="muted small">MOT and tax dates fill in automatically from the official records (and refresh weekly). You can still type them yourself.</p>
       </div>
 
-      <h3>Where did I park?</h3>
+      <h3 data-car="parking">Where did I park?</h3>
       <div class="card center">
         <button id="btn-park" class="primary">Save my parking spot</button>
         <div id="park-out" class="status"></div>
         <a id="lnk-park" class="btn-a" target="_blank" rel="noopener" hidden>Directions back to my car</a>
       </div>
 
-      <h3>Fuel log</h3>
+      <h3 data-car="costs">Fuel log</h3>
       <div class="card">
         <div id="fuel-stats" class="grid"></div>
         <details class="inner-form" id="fuel-form">
@@ -182,7 +190,7 @@
         <ul id="fuel-list" class="list"></ul>
       </div>
 
-      <h3>Service &amp; repairs</h3>
+      <h3 data-car="service">Service &amp; repairs</h3>
       <div class="card">
         <details class="inner-form">
           <summary>Add a record</summary>
@@ -197,7 +205,7 @@
         <ul id="svc-list" class="list"></ul>
       </div>
 
-      <h3>Mileage log</h3>
+      <h3 data-car="costs">Mileage log</h3>
       <div class="card">
         <div id="mileage-summary" class="grid"></div>
         <details class="inner-form">
@@ -302,7 +310,7 @@
         <ul id="del-list" class="list"></ul>
       </div>
 
-      <h3 id="sec-documents">Documents</h3>
+      <h3 id="sec-documents">Papers &amp; certificates</h3>
       <div class="card">
         <h2>Documents &amp; reminders</h2>
         <p class="muted">Keep track of anything with an expiry date — passport, driving licence, insurance, warranties. Attach a scan or PDF if you like. Your documents stay on this phone, encrypted.</p>
@@ -321,7 +329,6 @@
             <select id="doc-category">
               <option>Passport</option>
               <option>Driving licence</option>
-              <option>Warranty</option>
               <option>Subscription</option>
               <option>Membership</option>
               <option>Other</option>
@@ -355,7 +362,7 @@
       </div>
       <div id="policy-list"></div>
 
-      <h3 id="sec-emergency">Emergency info</h3>
+      <h3 id="sec-emergency">In an emergency</h3>
       <div class="card">
         <div class="emg-numbers">
           <a href="tel:999">🚨 Emergency <strong>999</strong></a>
@@ -364,9 +371,23 @@
           <a href="tel:105">💡 Power cut <strong>105</strong></a>
           <a href="tel:101">👮 Police (not urgent) <strong>101</strong></a>
         </div>
+        <h2 style="margin-top:14px">Everyone in the family</h2>
+        <div id="emg-people"></div>
         <h2 style="margin-top:14px">Our house</h2>
         <div id="house-out"></div>
         <button id="btn-house-edit" type="button" style="margin-top:10px">Edit</button>
+      </div>
+
+      <div class="card">
+        <h2>My medical card</h2>
+        <p class="muted small">Your own details — only on this phone.</p>
+        <div class="grid2">
+          <label class="field">Blood type<input id="emg-blood" type="text" placeholder="e.g. O+"></label>
+          <label class="field">NHS number<input id="emg-nhs" type="text"></label>
+        </div>
+        <label class="field">Allergies<input id="emg-allergies" type="text"></label>
+        <label class="field">Medications<input id="emg-meds" type="text"></label>
+        <label class="field">Emergency contact<input id="emg-contact" type="text" placeholder="name &amp; number"></label>
       </div>
 
       <h3 id="sec-subscriptions">Subscriptions</h3>
@@ -385,7 +406,7 @@
         <ul id="subs-list" class="list"></ul>
       </div>
 
-      <h3 id="sec-tax">Money &amp; tax</h3>
+      <h3 id="sec-tax">Overview &amp; tax</h3>
       <div class="card" id="money-overview"></div>
       <div class="card">
         <h2>Your company</h2>
@@ -427,6 +448,10 @@
             <label class="field">Value (£)<input id="inv-value" type="number" inputmode="numeric" placeholder="optional"></label>
           </div>
           <label class="field">Serial number<input id="inv-serial" type="text" placeholder="optional"></label>
+          <div class="grid2">
+            <label class="field">Bought<input id="inv-bought" type="date"></label>
+            <label class="field">Warranty until<input id="inv-warranty" type="date"></label>
+          </div>
           <label class="field">Photo — opens the camera, or pick a file<input id="inv-photo" type="file" accept="image/*" capture="environment"></label>
           <button id="btn-inv-add" class="primary">Add item</button>
         </details>
@@ -443,13 +468,16 @@
         <ul id="maint-list" class="list"></ul>
       </div>
 
-      <h3 id="sec-health">Health</h3>
+      <h3 id="sec-health">Check-ups</h3>
       <div class="card">
         <h2>Check-ups</h2>
         <p class="muted small">Enter when you last went and how often; it works out when you're next due.</p>
         <details class="inner-form" id="check-form">
           <summary>Add a check-up</summary>
-          <label class="field">Type<input id="check-type" type="text" placeholder="e.g. Dentist"></label>
+          <div class="grid2">
+            <label class="field">Type<input id="check-type" type="text" placeholder="e.g. Dentist"></label>
+            <label class="field">Who<select id="check-who"></select></label>
+          </div>
           <div class="grid2">
             <label class="field">Last visit<input id="check-last" type="date"></label>
             <label class="field">Every (months)<input id="check-interval" type="number" inputmode="numeric" placeholder="e.g. 6"></label>
@@ -458,18 +486,6 @@
         </details>
         <ul id="check-list" class="list"></ul>
       </div>
-      <div class="card">
-        <h2>Emergency card</h2>
-        <p class="muted small">Key info in one place. Stored encrypted like everything else.</p>
-        <div class="grid2">
-          <label class="field">Blood type<input id="emg-blood" type="text" placeholder="e.g. O+"></label>
-          <label class="field">NHS number<input id="emg-nhs" type="text"></label>
-        </div>
-        <label class="field">Allergies<input id="emg-allergies" type="text"></label>
-        <label class="field">Medications<input id="emg-meds" type="text"></label>
-        <label class="field">Emergency contact<input id="emg-contact" type="text" placeholder="name &amp; number"></label>
-      </div>
-
       <h3 id="sec-loyalty">Loyalty cards</h3>
       <div class="card">
         <p class="muted small">Keep your loyalty-card numbers here so you're never without them at the till.</p>
@@ -502,41 +518,9 @@
         </div>
       </div>
 
-      <h3 id="sec-sharing">Sharing &amp; sync</h3>
-      <div class="card" id="pair-setup">
-        <p class="muted small">Share your shopping list, bills and tasks between your two phones. It syncs through a server that only ever sees encrypted data. One of you creates the space; the other joins with the same code. (Needs the free sync server set up once — see the guide.)</p>
-        <label class="field">Sync server address<input id="sync-url" type="url" autocapitalize="off" placeholder="https://evergreen-sync.…workers.dev"></label>
-        <div class="row">
-          <button id="btn-pair-create" class="primary">Create a shared space</button>
-          <button id="btn-pair-join">Join with a code</button>
-        </div>
-        <div id="pair-code-box" hidden>
-          <p class="muted small" style="margin-top:12px">Share this code with your partner (say it or message it). They enter it under "Join with a code".</p>
-          <div id="pair-code" class="loyal-number"></div>
-        </div>
-        <p id="pair-status" class="status" role="status"></p>
-      </div>
-      <div class="card" id="pair-active" hidden>
-        <div class="line"><div class="name">Sharing is on</div><button id="btn-pair-leave" class="del" aria-label="Stop sharing">✕</button></div>
-        <p class="muted small">Code: <span id="pair-code-show"></span></p>
-        <button id="btn-sync" class="primary">Sync now</button>
-        <p id="sync-status" class="status" role="status"></p>
-        <h2 style="margin-top:18px">Notifications</h2>
-        <p class="muted small">Get a notification on this phone when your partner adds something (shopping, to-dos, events, bills, trips…), even when Evergreen is closed. It only ever says <em>who</em> added <em>how many</em> things — the details stay encrypted.</p>
-        <button id="btn-push" type="button">Turn on notifications</button>
-        <p id="push-status" class="status" role="status"></p>
-        <h2 style="margin-top:18px">If a phone is lost</h2>
-        <p class="muted small">Report a lost or stolen phone from the other one. It needs that phone owner's Evergreen passphrase, so nobody can do it by accident.</p>
-        <div id="lost-list"></div>
-      </div>
-      <div class="card">
-        <p class="muted small">Add a partner's email to turn reminders into calendar invites you both get.</p>
-        <label class="field">Partner's email<input id="partner-email" type="email" autocapitalize="off" placeholder="e.g. jess@example.com"></label>
-      </div>
-
       <h3 id="sec-shopping">Shopping list</h3>
       <div class="card" id="shared-card">
-        <p class="muted small" id="shared-hint">Things to buy. Tick them off as they go in the basket — jobs and reminders go in the To-do list. Pair with your partner in Sharing &amp; sync to share it between your phones. Tap 📷 to add a photo to any item.</p>
+        <p class="muted small" id="shared-hint">Things to buy. Tick them off as they go in the basket — jobs and reminders go in the To-do list. Pair with your partner in Settings → Sharing to share it between your phones. Tap 📷 to add a photo to any item.</p>
         <div class="row">
           <input id="shared-input" type="text" placeholder="Add an item…" style="flex:1;min-width:0">
           <button id="btn-shared-add" class="primary" style="width:auto">Add</button>
@@ -548,10 +532,7 @@
       <h3 id="sec-bills">Shared bills</h3>
       <div class="card">
         <p class="muted small">Log who paid for what. Split ones show who owes whom. Syncs with your partner once you're paired.</p>
-        <div class="grid2">
-          <label class="field">Your name<input id="my-name" type="text" autocomplete="off" placeholder="e.g. Lawrence"></label>
-          <label class="field">Partner's name<input id="partner-name" type="text" autocomplete="off" placeholder="e.g. Jess"></label>
-        </div>
+        <p class="muted small" id="bill-names-hint">Set your names in Settings → You &amp; your partner.</p>
         <div id="bill-balance" class="status"></div>
         <details class="inner-form" id="bill-form">
           <summary>Add a bill</summary>
@@ -583,6 +564,7 @@
     <!-- Trips -->
     <section id="tab-trips" class="tab">
       <div class="row" style="margin-bottom:12px">
+        <button class="nav-pill" data-go="car">‹ Car</button>
         <button class="nav-pill" data-go="check">Diagnostics</button>
         <button class="nav-pill" data-go="live">Live data</button>
         <button class="nav-pill" data-go="trips">Trips</button>
@@ -611,6 +593,7 @@
     <!-- Live -->
     <section id="tab-live" class="tab">
       <div class="row" style="margin-bottom:12px">
+        <button class="nav-pill" data-go="car">‹ Car</button>
         <button class="nav-pill" data-go="check">Diagnostics</button>
         <button class="nav-pill" data-go="live">Live data</button>
         <button class="nav-pill" data-go="trips">Trips</button>
@@ -627,6 +610,49 @@
     <!-- Help -->
     <section id="tab-help" class="tab">
       <h3>Settings</h3>
+      <div class="card" id="you-card">
+        <h2>You &amp; your partner</h2>
+        <p class="muted small">Used for "Jess added…", who paid a bill, calendar colours and your greeting.</p>
+        <div class="grid2">
+          <label class="field">Your name<input id="my-name" type="text" autocomplete="off" placeholder="e.g. Lawrence"></label>
+          <label class="field">Partner's name<input id="partner-name" type="text" autocomplete="off" placeholder="e.g. Jess"></label>
+        </div>
+      </div>
+      <details class="card" id="sharing-card" open>
+        <summary>Sharing, notifications &amp; parcel inbox</summary>
+
+      <div class="card" id="pair-setup">
+        <p class="muted small">Share your shopping list, bills and tasks between your two phones. It syncs through a server that only ever sees encrypted data. One of you creates the space; the other joins with the same code. (Needs the free sync server set up once — see the guide.)</p>
+        <label class="field">Sync server address<input id="sync-url" type="url" autocapitalize="off" placeholder="https://evergreen-sync.…workers.dev"></label>
+        <div class="row">
+          <button id="btn-pair-create" class="primary">Create a shared space</button>
+          <button id="btn-pair-join">Join with a code</button>
+        </div>
+        <div id="pair-code-box" hidden>
+          <p class="muted small" style="margin-top:12px">Share this code with your partner (say it or message it). They enter it under "Join with a code".</p>
+          <div id="pair-code" class="loyal-number"></div>
+        </div>
+        <p id="pair-status" class="status" role="status"></p>
+      </div>
+      <div class="card" id="pair-active" hidden>
+        <div class="line"><div class="name">Sharing is on</div><button id="btn-pair-leave" class="del" aria-label="Stop sharing">✕</button></div>
+        <p class="muted small">Code: <span id="pair-code-show"></span></p>
+        <button id="btn-sync" class="primary">Sync now</button>
+        <p id="sync-status" class="status" role="status"></p>
+        <h2 style="margin-top:18px">Notifications</h2>
+        <p class="muted small">Get a notification on this phone when your partner adds something (shopping, to-dos, events, bills, trips…), even when Evergreen is closed. It only ever says <em>who</em> added <em>how many</em> things — the details stay encrypted.</p>
+        <button id="btn-push" type="button">Turn on notifications</button>
+        <p id="push-status" class="status" role="status"></p>
+        <h2 style="margin-top:18px">If a phone is lost</h2>
+        <p class="muted small">Report a lost or stolen phone from the other one. It needs that phone owner's Evergreen passphrase, so nobody can do it by accident.</p>
+        <div id="lost-list"></div>
+      </div>
+      <div class="card">
+        <p class="muted small">Add a partner's email to turn reminders into calendar invites you both get.</p>
+        <label class="field">Partner's email<input id="partner-email" type="email" autocapitalize="off" placeholder="e.g. jess@example.com"></label>
+      </div>
+
+      </details>
 <details class="card" id="import-card">
         <summary>Quick import (paste to add lots at once)</summary>
         <p class="muted small">Hate typing? Tell Claude your details in a chat (or ask it to read them from your email), paste the block it gives you here, and it adds everything in one go. One item per line, like:</p>
@@ -682,7 +708,7 @@ shopping: milk, bread, eggs</pre>
 
 <details class="card">
   <summary>Sharing with your partner</summary>
-  <p>Pair once under <strong>Life → Sharing &amp; sync</strong>: one phone taps <em>Create a shared space</em>, the other taps <em>Join with a code</em> and enters the same code, with the same server address.</p>
+  <p>Pair once under <strong>Settings → Sharing</strong>: one phone taps <em>Create a shared space</em>, the other taps <em>Join with a code</em> and enters the same code, with the same server address.</p>
   <p><strong>Shared between you:</strong> the family calendar, shopping list (with photos), to-do list, family details, deliveries, meter readings and suppliers, and shared bills. <strong>Kept private to each phone:</strong> documents, health, money, loyalty cards, car and everything else.</p>
   <p>It syncs when you open the app, when you switch back to it, every minute while it's open, and straight after you change something. It can't sync while the app is closed — you'll get the latest the moment you open it.</p>
   <p>The code is the key to your shared space. Only share it with your partner.</p>
@@ -717,12 +743,12 @@ shopping: milk, bread, eggs</pre>
 
 <details class="card">
   <summary>Installing on another phone</summary>
-  <p>Open <strong>greenlawr.github.io/tiguan-diagnostics</strong> in <strong>Safari</strong> (iPhone) or <strong>Chrome</strong> (Android). iPhone: Share → <em>Add to Home Screen</em>. Android: ⋮ → <em>Install app</em>. Always open it from the home-screen icon, then set a passphrase and pair under Sharing &amp; sync.</p>
+  <p>Open <strong>greenlawr.github.io/tiguan-diagnostics</strong> in <strong>Safari</strong> (iPhone) or <strong>Chrome</strong> (Android). iPhone: Share → <em>Add to Home Screen</em>. Android: ⋮ → <em>Install app</em>. Always open it from the home-screen icon, then set a passphrase and pair under Settings → Sharing.</p>
 </details>
 
 <details class="card">
   <summary>If a phone is lost or stolen</summary>
-  <p>Your data is encrypted on the phone, so it can't be read without the passphrase. For extra peace of mind, either of you can lock a lost phone out from the other phone: <strong>Life → Sharing &amp; sync → If a phone is lost → Report lost</strong>, then enter the lost phone owner's Evergreen passphrase.</p>
+  <p>Your data is encrypted on the phone, so it can't be read without the passphrase. For extra peace of mind, either of you can lock a lost phone out from the other phone: <strong>Settings → Sharing → If a phone is lost → Report lost</strong>, then enter the lost phone owner's Evergreen passphrase.</p>
   <p>That cuts it off from your shared lists, calendar and bills straight away, deletes the old copy from your server, and gives you a new sharing code. The next time Evergreen is opened on the lost phone with signal — even just the lock screen — it erases itself.</p>
   <p>Optional: <strong>Help → Security &amp; backup → Erase after 10 wrong passphrase attempts</strong> stops anyone guessing your passphrase, even without signal.</p>
   <p><strong>Turn on your phone's own remote erase too</strong> — it can lock or wipe the whole phone, not just Evergreen:</p>
@@ -867,7 +893,7 @@ shopping: milk, bread, eggs</pre>
     <button data-tab="home" class="active">Home</button>
     <button data-tab="car">Car</button>
     <button data-tab="life">Life</button>
-    <button data-tab="help">Help</button>
+    <button data-tab="help">Settings</button>
   </nav>
 
   <div id="update-banner" class="ios-install update-banner" hidden role="status"><span>A new version is ready</span> <button id="btn-update-now">Update now</button></div>

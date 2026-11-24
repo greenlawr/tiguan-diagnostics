@@ -150,14 +150,34 @@ function friendly(e) {
 
 // ---------- navigation ----------
 let currentTab = 'home';
+// ----- Car: Overview · Running costs · Service · Parking (Diagnostics opens the car check) -----
+let carSection = 'overview';
+function initCarNav() {
+  const tab = $('tab-car');
+  let cur = 'overview';
+  for (const child of [...tab.children]) {
+    if (child.id === 'car-nav') continue;
+    if (child.tagName === 'H3' && child.dataset.car) cur = child.dataset.car;
+    child.dataset.carSec = child.dataset.carBlock || cur;
+  }
+  tab.querySelectorAll('[data-car-go]').forEach((b) => b.addEventListener('click', () => { haptic(); showCarSection(b.dataset.carGo); }));
+}
+function showCarSection(name) {
+  carSection = name || 'overview';
+  const tab = $('tab-car');
+  for (const child of tab.children) if (child.dataset.carSec) child.classList.toggle('sec-off', child.dataset.carSec !== carSection);
+  tab.querySelectorAll('[data-car-go]').forEach((b) => b.classList.toggle('current', b.dataset.carGo === carSection));
+}
 let currentLifeSection = null;
 function showTab(name) {
   currentTab = name;
   document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('active', t.id === 'tab-' + name));
-  document.querySelectorAll('.tabs button').forEach((b) => b.classList.toggle('active', b.dataset.tab === name));
+  const bottom = ['check', 'live', 'trips'].includes(name) ? 'car' : name; // diagnostics live inside Car
+  document.querySelectorAll('.tabs button').forEach((b) => b.classList.toggle('active', b.dataset.tab === bottom));
   document.querySelectorAll('.nav-pill').forEach((b) => b.classList.toggle('current', b.dataset.go === name));
   if (name !== 'live') stopLive();
-  if (name === 'help') renderLog();
+  if (name === 'help') { renderLog(); renderPush(); }
+  if (name === 'car') showCarSection(carSection);
   if (name === 'home') renderHome();
   if (name === 'life') { showLifeSection(pendingLifeSection); pendingLifeSection = null; }
   else clearInterval(trainTimer);
@@ -167,7 +187,7 @@ function showTab(name) {
   syncNav();
 }
 document.querySelectorAll('.tabs button').forEach((btn) => btn.addEventListener('click', () => showTab(btn.dataset.tab)));
-document.querySelectorAll('.nav-pill').forEach((btn) => btn.addEventListener('click', () => showTab(btn.dataset.go)));
+document.querySelectorAll('.nav-pill[data-go]').forEach((btn) => btn.addEventListener('click', () => showTab(btn.dataset.go)));
 
 // The phone's status bar matches the dark green opening screen, then the app.
 (() => {
@@ -189,6 +209,7 @@ function navLevels() {
   let n = 0;
   if (currentTab !== 'home') n++;
   if (currentTab === 'life' && currentLifeSection) n++;
+  if (['check', 'live', 'trips'].includes(currentTab)) n++; // Home → Car → Diagnostics
   if (!$('sheet')?.hidden) n++;
   if (document.querySelector('.file-viewer')) n++;
   if ($('rec-modal') && !$('rec-modal').hidden) n++;
@@ -215,6 +236,7 @@ function closeTopLevel() {
   if (!$('rec-modal').hidden) { $('rec-modal').hidden = true; return; }
   if (!$('scan-modal').hidden) { stopScan(); return; }
   if (currentTab === 'life' && currentLifeSection) { showLifeSection(null); return; }
+  if (['check', 'live', 'trips'].includes(currentTab)) { showTab('car'); return; }
   if (currentTab !== 'home') { showTab('home'); }
 }
 window.addEventListener('popstate', () => {
@@ -228,11 +250,11 @@ const SEC_ICON = { deliveries: '📦', documents: '📄', utilities: '⚡', subs
 let pendingLifeSection = null;
 const LIFE_GROUPS = [
   ['Today', ['calendar', 'shopping', 'tasks', 'deliveries', 'trains']],
-  ['Home', ['utilities', 'insurance', 'home', 'emergency']],
+  ['In an emergency', ['emergency']],
+  ['Home', ['utilities', 'insurance', 'home']],
   ['Family', ['family', 'health', 'travel']],
-  ['Money', ['tax', 'subscriptions', 'bills', 'loyalty']],
-  ['Documents', ['documents']],
-  ['Settings', ['sharing']],
+  ['Money', ['tax', 'subscriptions', 'bills']],
+  ['Wallet', ['documents', 'loyalty']],
 ];
 function initLifeNav() {
   const tab = $('tab-life');
@@ -288,8 +310,11 @@ function showLifeSection(name) {
   window.scrollTo(0, 0);
   if (name === 'trains') { renderTrains(); startTrainRefresh(); } else clearInterval(trainTimer);
   if (name === 'tax') renderCompany();
-  if (name === 'sharing') renderPush();
   if (name === 'deliveries') renderInbox();
+  if (name === 'health') renderCheckups();
+  if (name === 'family') renderFamily();
+  if (name === 'documents') renderDocs();
+  if (name === 'emergency') renderHouse();
   syncNav();
 }
 function goLife(section) {
@@ -1345,24 +1370,43 @@ const HOME_TILES = [
   { icon: '🏠', label: 'Home', go: () => goLife('home') },
   { icon: '❤️', label: 'Health', go: () => goLife('health') },
   { icon: '💳', label: 'Loyalty', go: () => goLife('loyalty') },
-  { icon: '🩺', label: 'Car check', go: () => showTab('check') },
-  { icon: '🚗', label: 'My car', go: () => showTab('car') },
+  { icon: '🚗', label: 'Car', go: () => showTab('car'), badge: () => { const v = loadVehicle(); const n = ['mot', 'tax', 'insurance', 'service'].filter((k) => { const cd = v[k] && countdown(v[k], ''); return cd && cd.days <= 30; }).length; return n ? { text: String(n), cls: 'soon' } : null; } },
   { icon: '🚆', label: 'Trains', go: () => goLife('trains'), badge: () => { const b = settings().trainBad; return b && b.n && Date.now() - b.at < 30 * 60000 ? { text: `${b.n} disrupted`, cls: 'soon' } : null; } },
   { icon: '✈️', label: 'Travel', go: () => goLife('travel'), badge: () => { const t = upcomingTrip(); return t ? { text: tripStatus(t, todayISO()), cls: 'minor' } : null; } },
   { icon: '👨‍👩‍👧', label: 'Family', go: () => goLife('family'), badge: () => { const n = sharedItems('child').filter((c) => { const cd = c.passportExpiry && countdown(c.passportExpiry, ''); return cd && cd.days <= 180; }).length; return n ? { text: String(n), cls: 'soon' } : null; } },
   { icon: '⚙️', label: 'Settings', go: () => showTab('help') },
 ];
+// Home shows your favourite sections; everything else is one tap away under Life.
+const DEFAULT_TILES = ['Calendar', 'Shopping list', 'To-do list', 'Deliveries', 'Family', 'Bills & suppliers', 'Insurance', 'Travel', 'Car'];
+const favouriteTiles = () => { const f = settings().homeTiles; return Array.isArray(f) && f.length ? f : DEFAULT_TILES; };
+function openTilePicker() {
+  const chosen = new Set(favouriteTiles());
+  const boxes = HOME_TILES.map((t) => { const cb = el('input', { type: 'checkbox' }); cb.checked = chosen.has(t.label); cb.addEventListener('change', () => (cb.checked ? chosen.add(t.label) : chosen.delete(t.label))); return el('label', { class: 'check tile-pick' }, cb, ` ${t.label}`); });
+  const save = el('button', { class: 'primary', type: 'button', text: 'Save' });
+  save.addEventListener('click', () => { saveSettings({ homeTiles: HOME_TILES.map((t) => t.label).filter((l) => chosen.has(l)) }); closeSheet(); renderTiles(); toast('Home updated ✓'); });
+  const reset = el('button', { type: 'button', text: 'Reset' });
+  reset.addEventListener('click', () => { saveSettings({ homeTiles: [] }); closeSheet(); renderTiles(); });
+  openSheet(el('h2', { text: 'Choose your Home shortcuts' }), el('p', { class: 'muted small', text: 'Just on this phone. Everything else is under Life.' }), el('div', { class: 'tile-picks' }, ...boxes), el('div', { class: 'row' }, reset, save));
+}
 function renderTiles() {
   const grid = $('home-tiles');
   if (!grid) return;
   grid.replaceChildren();
-  for (const t of HOME_TILES) {
+  const favs = favouriteTiles();
+  for (const t of HOME_TILES.filter((x) => favs.includes(x.label))) {
     const tile = el('button', { class: 'tile-btn' }, icon(TILE_ICON[t.label] || 'doc'), el('span', { class: 'tile-label', text: t.label }));
     const badge = t.badge && t.badge();
     if (badge) tile.append(el('span', { class: 'tag ' + badge.cls, text: badge.text }));
     tile.addEventListener('click', () => { haptic(); t.go(); });
     grid.append(tile);
   }
+  const all = el('button', { class: 'tile-btn tile-more' }, el('span', { class: 'tile-more-ico', text: '⋯' }), el('span', { class: 'tile-label', text: 'Everything else' }));
+  all.addEventListener('click', () => { haptic(); goLife(null); });
+  grid.append(all);
+  const edit = el('button', { class: 'link tiles-edit', type: 'button', text: 'Choose shortcuts' });
+  edit.addEventListener('click', openTilePicker);
+  grid.parentNode?.querySelectorAll(':scope > .tiles-edit').forEach((x) => x.remove());
+  grid.after(edit);
 }
 function renderHome() {
   renderDashboard();
@@ -1723,6 +1767,19 @@ function renderDocs() {
     const card = el('div', { class: 'card doc' }, head);
     attachPhoto(card, d, d.label);
     card.append(privateFiles(DOCS_KEY, d.id, 'Keep a scan or PDF of the document with it.'));
+    // Passports and licences belong with the person (Family), where trips check them.
+    if (['Passport', 'Driving licence'].includes(d.category) && d.expiry && children().length) {
+      const field = d.category === 'Passport' ? 'passportExpiry' : 'licenceExpiry';
+      const pick = el('select', {}, el('option', { value: '', text: `Add this ${d.category.toLowerCase()} to…` }), ...children().map((c) => el('option', { value: c.id, text: c.name })));
+      pick.addEventListener('change', () => {
+        const c = children().find((x) => x.id === pick.value);
+        if (!c) return;
+        sharedUpdate(c.id, { [field]: d.expiry }); scheduleSync(); renderFamily(); renderDashboard();
+        toast(`${c.name}'s ${d.category.toLowerCase()} expiry saved in Family ✓`);
+        pick.value = '';
+      });
+      card.append(el('div', { class: 'doc-to-family' }, el('span', { class: 'muted small', text: 'Trips check passports in Family. ' }), pick));
+    }
     const del = el('button', { class: 'link del-wide', text: 'Delete' });
     del.addEventListener('click', () => deleteItem(DOCS_KEY, d.id, renderDocs, { photoId: d.photoId, label: d.label }));
     card.append(del);
@@ -2016,8 +2073,10 @@ function renderInventory() {
   const list = $('inv-list');
   list.replaceChildren();
   for (const it of items) {
-    const sub = [it.room, it.value ? money(it.value) : null, it.serial ? 'S/N ' + it.serial : null].filter(Boolean).join(' · ');
-    const card = el('div', { class: 'card doc' }, el('div', { class: 'line' }, el('div', {}, el('div', { class: 'name', text: it.name }), el('div', { class: 'sub', text: sub })), null));
+    const sub = [it.room, it.value ? money(it.value) : null, it.serial ? 'S/N ' + it.serial : null, it.bought ? 'bought ' + fmtDate(it.bought) : null].filter(Boolean).join(' · ');
+    const wcd = it.warrantyUntil ? countdown(it.warrantyUntil, '') : null;
+    const card = el('div', { class: 'card doc' }, el('div', { class: 'line' }, el('div', {}, el('div', { class: 'name', text: it.name }), el('div', { class: 'sub', text: sub })),
+      wcd ? el('span', { class: 'tag ' + (wcd.days < 0 ? 'dim' : wcd.days <= 60 ? 'soon' : 'ok'), text: wcd.days < 0 ? 'warranty ended' : `warranty to ${fmtDate(it.warrantyUntil)}` }) : null));
     attachPhoto(card, it, it.name);
     card.append(privateFiles(INV_KEY, it.id, 'Receipts, warranty cards and manuals.'));
     const del = el('button', { class: 'link del-wide', text: 'Delete' });
@@ -2031,14 +2090,14 @@ $('btn-inv-add').addEventListener('click', async () => {
   if (!name) return alert('Please name the item.');
   const btn = $('btn-inv-add'); btn.disabled = true;
   try {
-    const entry = { id: Date.now(), name, room: $('inv-room').value.trim(), value: parseFloat($('inv-value').value) || 0, serial: $('inv-serial').value.trim() };
+    const entry = { id: Date.now(), name, room: $('inv-room').value.trim(), value: parseFloat($('inv-value').value) || 0, serial: $('inv-serial').value.trim(), bought: $('inv-bought').value, warrantyUntil: $('inv-warranty').value };
     const file = $('inv-photo').files[0];
     if (file && mediaKey) {
       entry.photoId = 'p' + Date.now() + Math.random().toString(36).slice(2, 6);
       await savePhoto(entry.photoId, await compressImage(file), mediaKey);
     }
     store.save(INV_KEY, [entry, ...store.load(INV_KEY, [])]);
-    for (const id of ['inv-name', 'inv-room', 'inv-value', 'inv-serial', 'inv-photo']) $(id).value = '';
+    for (const id of ['inv-name', 'inv-room', 'inv-value', 'inv-serial', 'inv-photo', 'inv-bought', 'inv-warranty']) $(id).value = '';
     renderInventory();
   } finally { btn.disabled = false; }
 });
@@ -2146,15 +2205,18 @@ $('btn-maint-add').addEventListener('click', () => {
 });
 
 // Health: check-ups
+const familyNames = () => [...new Set([myName() !== 'Me' ? myName() : '', partnerName() !== 'Partner' ? partnerName() : '', ...children().map((c) => c.name)].filter(Boolean))];
 function renderCheckups() {
   const items = store.load(CHECK_KEY, []);
   const list = $('check-list');
+  const who = $('check-who');
+  if (who) { const cur = who.value; who.replaceChildren(el('option', { value: '', text: 'Choose…' }), ...familyNames().map((n) => el('option', { value: n, text: n }))); who.value = cur; }
   list.replaceChildren();
   for (const c of items) {
     const due = nextDue(c.last, c.interval);
     const cd = due ? countdown(due, c.type) : null;
     const row = el('li', {}, el('div', { class: 'line' },
-      el('div', {}, el('div', { class: 'name', text: c.type }), el('div', { class: 'sub', text: c.last ? 'Last ' + fmtDate(c.last) : '' })),
+      el('div', {}, el('div', { class: 'name', text: c.type + (c.who ? ' — ' + c.who : '') }), el('div', { class: 'sub', text: [c.last ? 'last ' + fmtDate(c.last) : '', due ? 'next due ' + fmtDate(due) : ''].filter(Boolean).join(' · ') })),
       cd ? el('span', { class: 'tag ' + cd.level, text: cd.text.replace(c.type + ' ', '') }) : null));
     const del = el('button', { class: 'del', text: '✕' });
     del.addEventListener('click', () => deleteItem(CHECK_KEY, c.id, () => { renderCheckups(); renderDashboard(); }, { label: c.type }));
@@ -2166,9 +2228,9 @@ function renderCheckups() {
 $('btn-check-add').addEventListener('click', () => {
   const type = $('check-type').value.trim();
   if (!type) return alert('Please name the check-up.');
-  store.save(CHECK_KEY, [{ id: Date.now(), type, last: $('check-last').value, interval: parseInt($('check-interval').value) || 0 }, ...store.load(CHECK_KEY, [])]);
+  store.save(CHECK_KEY, [{ id: Date.now(), type, who: $('check-who').value, last: $('check-last').value, interval: parseInt($('check-interval').value) || 0 }, ...store.load(CHECK_KEY, [])]);
   for (const id of ['check-type', 'check-last', 'check-interval']) $(id).value = '';
-  renderCheckups(); renderDashboard();
+  renderCheckups(); renderFamily(); renderDashboard();
 });
 
 // Emergency card + partner email (bound inputs)
@@ -2228,7 +2290,8 @@ function collectExtraReminders() {
   }
   for (const s of store.load(SUBS_KEY, [])) add(nextRenewal(s), s.name, 'Subscription');
   for (const m of store.load(MAINT_KEY, [])) add(m.date, m.task, 'Home');
-  for (const c of store.load(CHECK_KEY, [])) add(nextDue(c.last, c.interval), c.type, 'Health');
+  for (const c of store.load(CHECK_KEY, [])) add(nextDue(c.last, c.interval), c.type + (c.who ? ' — ' + c.who : ''), 'Check-ups');
+  for (const it of store.load(INV_KEY, [])) if (it.warrantyUntil) { const cd = countdown(it.warrantyUntil, ''); if (cd && cd.days >= 0 && cd.days <= 30) add(it.warrantyUntil, `Warranty ends — ${it.name}`, 'Contents'); }
   for (const d of taxDeadlines()) add(d.date, d.label, 'Tax');
   for (const c of sharedItems('child')) if (c.passportExpiry) add(c.passportExpiry, `${c.name}'s passport`, 'Family');
   for (const c of sharedItems('child')) if (c.ghicExpiry) add(c.ghicExpiry, `${c.name}'s GHIC`, 'Family');
@@ -3252,7 +3315,7 @@ $('btn-cal-connect').addEventListener('click', async () => {
   if (!/^https:\/\/\S+/.test(link)) return setStatus('cal-conn-msg', "Paste your calendar's secret address first.", true);
   if (/calendar\.google\.com/.test(link) && !/\/ical\//.test(link)) return setStatus('cal-conn-msg', "That's not the iCal address — copy 'Secret address in iCal format' (it ends in .ics).", true);
   if (/calendar\.google\.com\/calendar\/ical\/[^/]+\/public\//.test(link)) return setStatus('cal-conn-msg', "That's the public address — Google only allows it for public calendars. Copy the 'Secret address in iCal format' just below it instead (it has 'private-' in it).", true);
-  if (!paired()) return setStatus('cal-conn-msg', 'Set up Sharing & sync first — the calendar uses the same server.', true);
+  if (!paired()) return setStatus('cal-conn-msg', 'Set up Settings → Sharing first — the calendar uses the same server.', true);
   const btn = $('btn-cal-connect');
   btn.disabled = true;
   setStatus('cal-conn-msg', 'Connecting…');
@@ -3302,7 +3365,7 @@ async function fileBlob(f) {
     if (!b) throw new Error("That file isn't on this phone (private files stay on the phone that added them).");
     return b;
   }
-  if (!paired()) throw new Error('Set up Sharing & sync to open shared files.');
+  if (!paired()) throw new Error('Set up Settings → Sharing to open shared files.');
   const s = settings();
   return downloadSharedFile({ serverUrl: s.syncUrl, code: s.householdCode, blobId: f.blobId, type: f.type });
 }
@@ -3334,7 +3397,7 @@ async function addFile(file, shared) {
   const tooBig = checkFileSize(prepared);
   if (tooBig) throw new Error(tooBig);
   if (shared) {
-    if (!paired()) throw new Error('Shared files are stored on your sync server — set up Life → Sharing & sync first.');
+    if (!paired()) throw new Error('Shared files are stored on your sync server — set up Settings → Sharing first.');
     const s = settings();
     const meta = await uploadSharedFile({ serverUrl: s.syncUrl, code: s.householdCode, file: prepared });
     return { blobId: meta.blobId, name: meta.name, type: meta.type, size: meta.size, addedAt: meta.addedAt, by: myName() };
@@ -3709,7 +3772,7 @@ $('btn-trip-add')?.addEventListener('click', () => openTripEditor());
 
 // ---------- public information via your sync server (nothing personal is sent) ----------
 async function info(kind, params = {}) {
-  if (!paired()) throw new Error('This uses your sync server — set up Life → Sharing & sync first.');
+  if (!paired()) throw new Error('This uses your sync server — set up Settings → Sharing first.');
   const s = settings();
   const q = new URLSearchParams({ h: await householdId(s.householdCode), ...params });
   const res = await fetch(`${s.syncUrl.replace(/\/+$/, '')}/info/${kind}?${q}`, { cache: 'no-store', headers: { 'X-Evergreen-Token': await writeToken(s.householdCode) } });
@@ -3879,7 +3942,7 @@ async function renderTrains() {
   $('train-other-wrap').hidden = $('train-home').value !== 'other';
   const home = s.trainHome === 'other' ? (s.trainOther || '').toUpperCase() : s.trainHome;
   if (!home) { out.replaceChildren(el('p', { class: 'muted small', text: 'Choose your station above to see live trains to and from London Euston.' })); return; }
-  if (!paired()) { out.replaceChildren(el('p', { class: 'muted small', text: 'Live trains come through your sync server — set up Life → Sharing & sync first.' })); return; }
+  if (!paired()) { out.replaceChildren(el('p', { class: 'muted small', text: 'Live trains come through your sync server — set up Settings → Sharing first.' })); return; }
   const boards = [{ title: `${stationName(home)} → London Euston`, from: home, to: 'EUS' }, { title: `London Euston → ${stationName(home)}`, from: 'EUS', to: home }];
   if (!out.children.length) out.replaceChildren(el('p', { class: 'muted small', text: 'Loading live trains…' }));
   const results = await Promise.all(boards.map((b) => info('trains', { from: b.from, to: b.to }).catch((e) => ({ error: e.message }))));
@@ -4078,7 +4141,7 @@ function renderCompany() {
   if (!num) { out.replaceChildren(); return; }
   const c = infoCached('company:' + num, 24 * 3600000, () => info('company', { number: num }));
   const v = c.value;
-  if (!v) { out.replaceChildren(el('p', { class: 'muted small', text: paired() ? 'Checking Companies House…' : 'This uses your sync server — set up Sharing & sync first.' })); if (paired()) c.refresh().then(renderCompany).catch((e) => setStatus('company-status', e.message, true)); return; }
+  if (!v) { out.replaceChildren(el('p', { class: 'muted small', text: paired() ? 'Checking Companies House…' : 'This uses your sync server — set up Settings → Sharing first.' })); if (paired()) c.refresh().then(renderCompany).catch((e) => setStatus('company-status', e.message, true)); return; }
   if (v.configured === false) { out.replaceChildren(el('p', { class: 'muted small', text: 'Needs a free Companies House key on your sync server — see Help → Company deadlines.' })); return; }
   if (v.error) { out.replaceChildren(el('p', { class: 'status bad', text: v.error })); return; }
   const list = el('ul', { class: 'list' });
@@ -4172,7 +4235,7 @@ function renderInbox() {
   if (!out) return;
   const it = inboxItem();
   $('btn-inbox-setup').hidden = !!it;
-  if (!it) { out.replaceChildren(paired() ? '' : el('p', { class: 'muted small', text: 'Set up Sharing & sync first — the inbox lives on your sync server.' })); return; }
+  if (!it) { out.replaceChildren(paired() ? '' : el('p', { class: 'muted small', text: 'Set up Settings → Sharing first — the inbox lives on your sync server.' })); return; }
   const addr = inboxAddress(settings().syncUrl, it.inboxId, it.publicKey);
   const copy = el('button', { class: 'primary', type: 'button', text: 'Copy the inbox address' });
   copy.addEventListener('click', () => copyValue(addr, 'Inbox address'));
@@ -4180,7 +4243,7 @@ function renderInbox() {
     el('code', { class: 'inbox-addr', text: addr }), copy, el('p', { class: 'muted small', text: settings().inboxLast ? `Last parcel collected ${new Date(settings().inboxLast).toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}.` : 'Nothing collected yet.' }));
 }
 $('btn-inbox-setup')?.addEventListener('click', async () => {
-  if (!paired()) return toast('Set up Sharing & sync first.');
+  if (!paired()) return toast('Set up Settings → Sharing first.');
   try {
     await syncNow(); // make sure we don't already have one from your partner's phone
     let it = inboxItem();
@@ -4438,7 +4501,32 @@ function renderHouse() {
   if (boilerPolicy) dl.append(el('dt', { text: 'Boiler cover' }), el('dd', {}, el('a', { href: 'tel:' + boilerPolicy.claimsPhone.replace(/[^\d+]/g, ''), text: `${boilerPolicy.claimsPhone}${boilerPolicy.insurer ? ' (' + boilerPolicy.insurer + ')' : ''}` })));
   out.append(dl.children.length ? dl : el('p', { class: 'muted small', text: 'Nothing saved yet — add where the stopcock and fuse box are, who has spare keys, and so on. Handy for you, a babysitter or a house-sitter.' }));
   if (h.notes) out.append(el('p', { class: 'small child-notes', style: 'margin-top:8px', text: h.notes }));
+  renderEmergencyPeople();
   if (h.id) out.append(lazyFiles({ shared: true, hint: 'Photos of the stopcock, fuse box, meters — so anyone can find them.', get: () => house()?.files || [], save: (list) => { sharedUpdate(h.id, { files: list }); scheduleSync(); } }));
+}
+// Everyone's essentials, for the "In an emergency" screen (no NHS or passport numbers).
+function renderEmergencyPeople() {
+  const out = $('emg-people');
+  if (!out) return;
+  const ppl = children();
+  if (!ppl.length) { out.replaceChildren(el('p', { class: 'muted small', text: 'Add everyone in Family (allergies, medication, GP) and their essentials appear here.' })); return; }
+  out.replaceChildren(...ppl.map((c) => {
+    const rows = [['Allergies', c.allergies], ['Medication', c.medication], ['Conditions', c.conditions], ['Blood group', c.blood]].filter(([, v]) => v);
+    const gp = c.gp ? `${c.gp}${c.gpPhone ? '' : ''}` : '';
+    return el('div', { class: 'emg-person' }, el('div', { class: 'name', text: `${c.name}${c.dob ? ' · ' + ageText(c.dob, todayISO()) : ''}` }),
+      rows.length ? el('dl', { class: 'child-dl' }, ...rows.flatMap(([k, v]) => [el('dt', { text: k }), el('dd', { text: v })])) : el('div', { class: 'muted small', text: 'No allergies or medication recorded.' }),
+      gp || c.gpPhone ? el('div', { class: 'small' }, `GP: ${gp} `, c.gpPhone ? el('a', { href: 'tel:' + c.gpPhone.replace(/[^\d+]/g, ''), text: c.gpPhone }) : null) : null);
+  }));
+}
+/** Warranties used to be Documents; they belong with the item in Contents. */
+function migrateWarranties() {
+  const docs = store.load(DOCS_KEY, []);
+  const w = docs.filter((d) => d.category === 'Warranty');
+  if (!w.length) return;
+  store.save(INV_KEY, [...w.map((d) => ({ id: Date.now() + Math.random(), name: d.label, room: '', value: 0, serial: '', warrantyUntil: d.expiry || '', notes: d.note || '', photoId: d.photoId, files: d.files || [] })), ...store.load(INV_KEY, [])]);
+  store.save(DOCS_KEY, docs.filter((d) => d.category !== 'Warranty'));
+  renderDocs(); renderInventory();
+  toast(`Moved ${w.length} warrant${w.length === 1 ? 'y' : 'ies'} into Home → Contents`);
 }
 function openHouseEditor() {
   const h = house() || {};
@@ -4551,6 +4639,8 @@ function renderFamily() {
       draw();
     });
     draw();
+    const dueChecks = store.load(CHECK_KEY, []).filter((x) => x.who && x.who === c.name).map((x) => ({ x, due: nextDue(x.last, x.interval) })).filter((y) => y.due);
+    if (dueChecks.length) card.append(el('div', { class: 'child-group', text: 'Check-ups' }), el('ul', { class: 'list' }, ...dueChecks.map(({ x, due }) => { const cd = countdown(due, ''); return el('li', {}, el('div', { class: 'line' }, el('div', { class: 'name', text: x.type }), el('span', { class: 'tag ' + (cd ? cd.level : 'dim'), text: cd && cd.days < 0 ? 'overdue' : 'due ' + fmtDate(due) }))); })));
     if (!groupsFor(c).some((g) => g.fields.some((f) => f.secret && c[f.k])) && !(c.extras || []).some((x) => looksSecret(x.value))) show.hidden = true;
     const edit = el('button', { text: 'Edit' });
     edit.addEventListener('click', () => openChildEditor(c));
@@ -4635,7 +4725,7 @@ async function lookupCar(manual = false) {
   const reg = cleanReg($('reg-input').value || v.reg || '');
   const say = (msg, bad) => { if (manual || !bad) setStatus('car-lookup-status', msg, bad); };
   if (!reg) return say('Type your registration first.', true);
-  if (!paired()) return say('This uses your sync server — set up Life → Sharing & sync first.', true);
+  if (!paired()) return say('This uses your sync server — set up Settings → Sharing first.', true);
   carLookupBusy = true;
   if (manual) setStatus('car-lookup-status', 'Looking up your car…');
   try {
@@ -4855,7 +4945,7 @@ function openReportLost(d) {
       haptic();
       openSheet(el('div', { class: 'sheet-icon', text: '🔒' }), el('h2', { text: `${d.owner}'s phone is locked out` }),
         el('p', { text: `It can no longer see your shared lists, calendar or bills, and the old copy has been deleted from your server. The next time Evergreen is opened on that phone with signal, it erases itself.` }),
-        el('p', { class: 'muted', text: `Your shared space now has a new code. When ${d.owner} has a phone again, install Evergreen, then Sharing & sync → Join with a code:` }),
+        el('p', { class: 'muted', text: `Your shared space now has a new code. When ${d.owner} has a phone again, install Evergreen, then Settings → Sharing → Join with a code:` }),
         el('div', { class: 'loyal-number', text: code }),
         el('div', { class: 'row' }, (() => { const b = el('button', { class: 'primary', text: 'Done' }); b.addEventListener('click', closeSheet); return b; })()));
       renderLost();
@@ -4913,7 +5003,7 @@ function renderLost() {
 
 // ---------- app updates ----------
 // Must match CACHE in sw.js (a test checks this).
-const APP_VERSION = 'evergreen-v65';
+const APP_VERSION = 'evergreen-v66';
 let updateReady = false;
 async function checkForUpdate(manual = false) {
   try {
@@ -4985,6 +5075,7 @@ async function initAll() {
   renderFamily();
   renderTravel();
   migrateInsurance();
+  migrateWarranties();
   renderPolicies();
   renderHouse();
   syncCarInsurance();
@@ -5040,6 +5131,7 @@ try {
 })();
 
 initLifeNav();
+initCarNav();
 showLockScreen();
 checkLostStatus(true); // runs on the lock screen too, before anyone unlocks
 document.addEventListener('visibilitychange', () => { if (!document.hidden) checkLostStatus(); });
