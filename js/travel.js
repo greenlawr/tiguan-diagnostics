@@ -64,6 +64,7 @@ export function countryCode(text) {
   return '';
 }
 export const countryName = (iso, fallback = '') => NAMES[iso] || (SLUG[iso] ? SLUG[iso].replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()) : fallback);
+export const adviceSlug = (iso) => SLUG[iso] || '';
 export const adviceUrl = (iso) => 'https://www.gov.uk/foreign-travel-advice/' + (SLUG[iso] || '');
 
 /**

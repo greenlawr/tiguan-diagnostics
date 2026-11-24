@@ -237,6 +237,17 @@
       </div>
       <div id="trip-list"></div>
 
+      <h3 id="sec-trains">Trains</h3>
+      <div class="card">
+        <p class="muted small">Live departures between your station and London Euston, both ways — delays, cancellations, platforms and disruption, straight from National Rail. Your station is only kept on this phone.</p>
+        <label class="field">Your station
+          <select id="train-home"><option value="">Choose…</option><option value="WFJ">Watford Junction</option><option value="MKC">Milton Keynes Central</option><option value="BLY">Bletchley</option><option value="LBZ">Leighton Buzzard</option><option value="TRI">Tring</option><option value="BKM">Berkhamsted</option><option value="HML">Hemel Hempstead</option><option value="APS">Apsley</option><option value="KGL">Kings Langley</option><option value="BSH">Bushey</option><option value="HRW">Harrow &amp; Wealdstone</option><option value="WMB">Wembley Central</option><option value="NMP">Northampton</option><option value="RUG">Rugby</option><option value="COV">Coventry</option><option value="BHI">Birmingham International</option><option value="BHM">Birmingham New Street</option><option value="WVH">Wolverhampton</option><option value="NUN">Nuneaton</option><option value="TAM">Tamworth</option><option value="LTV">Lichfield Trent Valley</option><option value="STA">Stafford</option><option value="SOT">Stoke-on-Trent</option><option value="CRE">Crewe</option><option value="MAN">Manchester Piccadilly</option><option value="WBQ">Warrington Bank Quay</option><option value="WGN">Wigan North Western</option><option value="PRE">Preston</option><option value="LAN">Lancaster</option><option value="LIV">Liverpool Lime Street</option><option value="CTR">Chester</option><option value="GLC">Glasgow Central</option><option value="other">Another station (enter its code)</option></select>
+        </label>
+        <label class="field" id="train-other-wrap" hidden>Station code (3 letters — on any National Rail ticket or nationalrail.co.uk)<input id="train-other" type="text" maxlength="3" autocapitalize="characters" placeholder="e.g. WFJ"></label>
+        <button id="btn-train-refresh">Refresh now</button>
+      </div>
+      <div id="train-boards"></div>
+
       <h3 id="sec-deliveries">Deliveries</h3>
       <div class="card">
         <p class="muted small">Add a parcel to see it on your dashboard with a link to the courier's live tracking. Tip: from Amazon or an email, tap Share → Evergreen to add it quickly.</p>
@@ -332,6 +343,13 @@
 
       <h3 id="sec-tax">Money &amp; tax</h3>
       <div class="card" id="money-overview"></div>
+      <div class="card">
+        <h2>Your company</h2>
+        <p class="muted small">Add your company number and Evergreen keeps your Companies House and Corporation Tax deadlines on Home. Only the company number (which is public) is looked up.</p>
+        <label class="field">Company number<input id="company-number" type="text" autocapitalize="characters" placeholder="e.g. 01234567"></label>
+        <p id="company-status" class="status" role="status"></p>
+        <div id="company-out"></div>
+      </div>
       <div class="card">
         <h2>Key dates</h2>
         <ul id="tax-dates" class="list"></ul>
@@ -684,6 +702,33 @@ shopping: milk, bread, eggs</pre>
     <li>On the Car tab, type your registration — the details fill in by themselves.</li>
   </ol>
   <p class="muted small">The keys stay on your server, never on the phones. Either key works on its own. DVSA cancels an MOT key that isn't used for 90 days — Evergreen refreshes weekly, which keeps it active.</p>
+</details>
+
+<h3>Live information (optional keys)</h3>
+<details class="card" id="trains-help">
+  <summary>Live trains (setting up)</summary>
+  <p>Live trains use National Rail's official feed. It's free, but needs a key, once:</p>
+  <ol>
+    <li>Register at <strong>raildata.org.uk</strong> (Rail Data Marketplace) and sign in.</li>
+    <li>Find the product <strong>“Live Departure Board”</strong> (National Rail Enquiries) and subscribe — it's free.</li>
+    <li>Open the product's <strong>Specification</strong> tab. Copy two things: the <strong>Consumer key</strong>, and the web address for <strong>GetDepBoardWithDetails</strong> (it starts <code>https://api1.raildata.org.uk/</code>).</li>
+    <li>In Cloudflare (your personal account): <strong>evergreen-sync → Settings → Variables and Secrets → Add</strong>, type <strong>Secret</strong>:
+      <code>RAIL_API_KEY</code> = the consumer key, and <code>RAIL_LDB_URL</code> = the web address (up to and including <code>GetDepBoardWithDetails</code>; Evergreen adds the station).</li>
+    <li>In Life → Trains, choose your station.</li>
+  </ol>
+  <p class="muted small">Only station codes are sent (for example MKC and EUS) — nothing about you.</p>
+</details>
+<details class="card" id="company-help">
+  <summary>Company deadlines (setting up)</summary>
+  <ol>
+    <li>Create a free account at <strong>developer.company-information.service.gov.uk</strong>, then <strong>Your applications → Create an application</strong> (choose Live) and <strong>Create new key</strong> → type <strong>REST</strong>.</li>
+    <li>In Cloudflare: <strong>evergreen-sync → Settings → Variables and Secrets → Add</strong>, type <strong>Secret</strong>: <code>COMPANIES_HOUSE_KEY</code> = the key.</li>
+    <li>In Life → Money &amp; tax, enter your company number.</li>
+  </ol>
+</details>
+<details class="card">
+  <summary>Energy, travel weather &amp; bank holidays (nothing to set up)</summary>
+  <p>Energy comparison (price cap and live Octopus tariffs), GOV.UK travel advice changes, trip weather, exchange rates and bank holidays need no keys. Your usage, rates and quotes are compared on your phone; the server only fetches public prices for your region.</p>
 </details>
 
 <details class="card">

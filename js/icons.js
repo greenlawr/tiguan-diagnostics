@@ -26,6 +26,7 @@ const COLOURS = {
   drop: ['#5fd0ff', '#1677d6'],
   family: ['#f39bd8', '#a743cf'],
   plane: ['#6fd3ff', '#2a62e0'],
+  train: ['#ffb36b', '#d9541e'],
 };
 
 // Symbols drawn on a 48×48 grid. `D` is replaced with the tile's dark colour.
@@ -94,6 +95,7 @@ const GLYPHS = {
     <rect x="24.5" y="29" width="7.5" height="2.2" rx="1.1" fill="D" opacity=".45"/>`,
   flame: `<path d="M24 8.5c1.6 5.2 8 8.6 8 16a8 8 0 0 1-16 0c0-3.8 1.9-6.1 3.8-8 .4 2.5 1.7 4.1 3.3 4.8C22.3 16.6 22.2 12.3 24 8.5z" fill="#fff"/>
     <path d="M24 37.5a4 4 0 0 1-4-4c0-2.5 2.3-4 4-6.6 1.7 2.6 4 4.1 4 6.6a4 4 0 0 1-4 4z" fill="D" opacity=".55"/>`,
+  train: `<rect x="14" y="9.5" width="20" height="24" rx="5" fill="#fff"/><rect x="17" y="13" width="14" height="8" rx="1.8" fill="D" opacity=".55"/><circle cx="19" cy="27.5" r="2" fill="D"/><circle cx="29" cy="27.5" r="2" fill="D"/><path d="M17.5 33.5l-3.5 5M30.5 33.5l3.5 5" stroke="#fff" stroke-width="2.6" stroke-linecap="round"/>`,
   plane: `<path d="M37.2 12.3c1.3-1.3 1.2-3.1.3-3.9-.9-.8-2.6-.9-3.9.4l-5.4 5.6-13.6-4.2-2.7 2.7 11.2 6.7-5.7 6-4.5-.8-2 2 5.1 2.9 2.9 5.1 2-2-.8-4.5 6-5.7 6.7 11.2 2.7-2.7-4.2-13.6z" fill="#fff"/>`,
   family: `<circle cx="16" cy="15.5" r="4.2" fill="#fff" opacity=".85"/><circle cx="32" cy="15.5" r="4.2" fill="#fff" opacity=".85"/>
     <path d="M8 34a8 8 0 0 1 16 0z" fill="#fff" opacity=".85"/><path d="M24 34a8 8 0 0 1 16 0z" fill="#fff" opacity=".85"/>
@@ -125,10 +127,10 @@ export const TILE_ICON = {
   'Car check': 'gauge', 'My car': 'car', 'Shopping list': 'cart', 'Documents': 'doc',
   'Utilities': 'bolt', 'Money & tax': 'money', 'Home': 'house', 'Health': 'heart',
   'Deliveries': 'box', 'Loyalty': 'card', 'Trips': 'fuel', 'Settings': 'gear',
-  'Calendar': 'calendar', 'Sharing': 'share', 'To-do list': 'tasks', 'Family': 'family', 'Travel': 'plane',
+  'Calendar': 'calendar', 'Sharing': 'share', 'To-do list': 'tasks', 'Family': 'family', 'Travel': 'plane', 'Trains': 'train',
 };
 export const SEC_ICON_NAME = {
   deliveries: 'box', documents: 'doc', utilities: 'bolt', subscriptions: 'refresh',
   tax: 'money', home: 'house', health: 'heart', loyalty: 'card', sharing: 'share', shopping: 'cart',
-  bills: 'split', tasks: 'tasks', calendar: 'calendar', family: 'family', travel: 'plane',
+  bills: 'split', tasks: 'tasks', calendar: 'calendar', family: 'family', travel: 'plane', trains: 'train',
 };

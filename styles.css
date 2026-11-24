@@ -557,3 +557,16 @@ input[type=checkbox] { accent-color: var(--accent); width: 22px; height: 22px; f
 .booking-ico { font-size: 22px; line-height: 1.2; }
 .booking-main { flex: 1; min-width: 0; }
 .booking .link { width: auto; flex: 0 0 auto; }
+
+/* Trains */
+.train .name { font-weight: 600; }
+.train-time { font-variant-numeric: tabular-nums; font-weight: 800; margin-right: 2px; }
+.train.cancelled .name { text-decoration: line-through; opacity: .7; }
+.train-reason { color: var(--soon); }
+.train-msg { margin-bottom: 12px; }
+.train-msg p { margin: 6px 0 0; }
+/* Trip weather */
+.wx-row { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
+.wx-day { flex: 0 0 64px; text-align: center; background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 6px 4px; }
+.wx-ico { font-size: 22px; }
+.energy-list .name { font-size: 15px; }

@@ -4,6 +4,8 @@
 // public household id. It cannot read anything you store. Deploy it free on
 // Cloudflare and bind a KV namespace called HOUSEHOLD (see README in this folder).
 
+import { handleInfo } from './info.js';
+
 const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
@@ -167,6 +169,16 @@ export default {
       if (!/^[A-Z0-9]{2,8}$/.test(reg)) return json({ error: 'that registration doesn\'t look right' }, 400);
       const [dvla, mot] = await Promise.all([dvlaLookup(env, reg), motLookup(env, reg)]);
       return json({ reg, dvla, mot });
+    }
+
+    // Public information (tariffs, trains, travel advice…): GET /info/<kind>?h=<household>&…
+    const infoMatch = url.pathname.match(/\/info\/([a-z]+)\/?$/);
+    if (request.method === 'GET' && infoMatch) {
+      const hid = url.searchParams.get('h') || '';
+      if (!/^[a-f0-9]{16,64}$/.test(hid) || !(await env.HOUSEHOLD.get(hid))) return json({ error: 'unknown household — sync once first' }, 403);
+      if (!(await authorised(request, env, hid))) return json({ error: 'not allowed' }, 401);
+      const r = await handleInfo(env, url, infoMatch[1]);
+      return json(r.body, r.status || 200);
     }
 
     // Shared encrypted files: PUT / GET / DELETE /blob?h=<household>&id=<file id>

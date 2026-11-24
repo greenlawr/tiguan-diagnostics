@@ -24,7 +24,8 @@ import { syncShared } from './sync.js';
 import { savePhoto, loadPhoto, deletePhoto, exportAllPhotos, importAllPhotos } from './photos.js';
 import { parseImport, importCount } from './import.js';
 import { icon, TILE_ICON, SEC_ICON_NAME } from './icons.js';
-import { tripChecks, tripStatus, tripCalendarRows, timeline, matchTrip, countryCode, countryName, flag, daysBetween, BOOKING_KINDS } from './travel.js';
+import { tripChecks, tripStatus, tripCalendarRows, timeline, matchTrip, countryCode, countryName, flag, daysBetween, BOOKING_KINDS, adviceSlug } from './travel.js';
+import { capFor, nextCap, tariffCost, compareTariffs, yearlyFromReadings, TYPICAL, REGIONS } from './energy.js';
 import { uploadSharedFile, downloadSharedFile, deleteSharedFile, savePrivateFile, loadPrivateFile, deletePrivateFile, exportPrivateFiles, importPrivateFiles, checkFileSize } from './files.js';
 
 const haptic = (ms = 12) => { try { navigator.vibrate?.(ms); } catch { /* unsupported */ } };
@@ -153,6 +154,7 @@ function showTab(name) {
   if (name === 'help') renderLog();
   if (name === 'home') renderHome();
   if (name === 'life') { showLifeSection(pendingLifeSection); pendingLifeSection = null; }
+  else clearInterval(trainTimer);
   // The connection pill only matters on the car screens.
   $('conn').style.display = ['check', 'live', 'trips'].includes(name) || elm ? '' : 'none';
   window.scrollTo(0, 0);
@@ -202,6 +204,8 @@ function showLifeSection(name) {
     child.classList.toggle('sec-off', showMenu || child.dataset.lifeSec !== name);
   }
   window.scrollTo(0, 0);
+  if (name === 'trains') { renderTrains(); startTrainRefresh(); } else clearInterval(trainTimer);
+  if (name === 'tax') renderCompany();
 }
 function goLife(section) {
   pendingLifeSection = section;
@@ -1238,6 +1242,7 @@ const HOME_TILES = [
   { icon: '💳', label: 'Loyalty', go: () => goLife('loyalty') },
   { icon: '🩺', label: 'Car check', go: () => showTab('check') },
   { icon: '🚗', label: 'My car', go: () => showTab('car') },
+  { icon: '🚆', label: 'Trains', go: () => goLife('trains'), badge: () => { const b = settings().trainBad; return b && b.n && Date.now() - b.at < 30 * 60000 ? { text: `${b.n} disrupted`, cls: 'soon' } : null; } },
   { icon: '✈️', label: 'Travel', go: () => goLife('travel'), badge: () => { const t = upcomingTrip(); return t ? { text: tripStatus(t, todayISO()), cls: 'minor' } : null; } },
   { icon: '👨‍👩‍👧', label: 'Family', go: () => goLife('family'), badge: () => { const n = sharedItems('child').filter((c) => { const cd = c.passportExpiry && countdown(c.passportExpiry, ''); return cd && cd.days <= 180; }).length; return n ? { text: String(n), cls: 'soon' } : null; } },
   { icon: '⚙️', label: 'Settings', go: () => showTab('help') },
@@ -1285,6 +1290,7 @@ function upcomingEvents(days = 7) {
   // Trips (and their flights, hotel check-ins…) appear automatically too.
   const fromISO = todayISO(), toISO = isoPlus(fromISO, days);
   for (const t of trips()) rows.push(...tripCalendarRows(t, fromISO, toISO));
+  rows.push(...bankHolidayRows(fromISO, toISO));
   // Events from a connected calendar always belong to someone: if that phone had
   // no name set, it's yours (your calendar) or your partner's (theirs).
   const mySrc = settings().calSrc;
@@ -1324,6 +1330,7 @@ function personColour(who) {
   if (!who) return ADDED_HERE;
   if (who === 'Birthdays') return '#8a4fd6';
   if (who === 'Trips') return '#0b8b80';
+  if (who === 'Bank holiday') return '#64748b';
   if (who === 'Both') return '#2b6cd6'; // in both your calendars
   return who === myName() ? '#1f9a5d' : '#d6457a'; // you green, your partner pink
 }
@@ -1393,7 +1400,7 @@ function renderCalendar() {
   const today = todayISO();
   const all = upcomingEvents(CAL_DAYS);
   // Legend: whose events are on the calendar (you first, "Added here" last)
-  const rank = (p) => (p === myName() ? 0 : p === 'Both' ? 2 : p === 'Birthdays' ? 3 : p === 'Trips' ? 4 : !p ? 5 : 1); // you, partner, both, birthdays, trips, added here
+  const rank = (p) => (p === myName() ? 0 : p === 'Both' ? 2 : p === 'Birthdays' ? 3 : p === 'Trips' ? 4 : p === 'Bank holiday' ? 5 : !p ? 6 : 1); // you, partner, both, birthdays, trips, added here
   const people = [...new Set(all.map((e) => e.who || ''))].sort((x, y) => rank(x) - rank(y) || x.localeCompare(y));
   $('cal-legend').replaceChildren(...people.map((p) => { const k = el('span', { class: 'cal-key', text: p === 'Both' ? 'Both of you' : p || 'Added here' }); k.style.setProperty('--c', personColour(p)); return k; }));
   // Day strip: the next 14 days, with a dot for each person who has something on
@@ -1644,12 +1651,18 @@ function renderUtilities() {
     const meters = METERS.filter((m) => planForMeter(m.kind, items) === u);
     if (meters.length) row.append(el('div', { class: 'util-meters' }, ...meters.map((m) => meterPanel(m, u))));
     const actions = el('div', { class: 'row', style: 'margin-top:10px' });
-    const rec = el('button', { text: 'Get a recommendation' });
+    if (['Energy', 'Electricity', 'Gas'].includes(u.type)) {
+      const cmp = el('button', { class: 'primary', text: u.energy && (u.energy.elecUnit || u.energy.gasUnit) ? 'Compare deals' : 'Compare deals (add your rates)' });
+      cmp.addEventListener('click', () => openEnergyCompare(u.id));
+      actions.append(cmp);
+    }
+    const rec = el('button', { text: 'Ask Claude' });
+    if (u.type === 'Water') rec.hidden = true; // you can't switch water supplier
     rec.addEventListener('click', async () => {
       const text = utilityBrief(u);
       try {
         if (navigator.share) await navigator.share({ title: `Compare my ${u.type} deal`, text });
-        else { await navigator.clipboard.writeText(text); rec.textContent = 'Copied — paste it to Claude'; setTimeout(() => (rec.textContent = 'Get a recommendation'), 2500); }
+        else { await navigator.clipboard.writeText(text); rec.textContent = 'Copied — paste it to Claude'; setTimeout(() => (rec.textContent = 'Ask Claude'), 2500); }
       } catch { /* share closed */ }
     });
     actions.append(rec);
@@ -2037,6 +2050,8 @@ function collectExtraReminders() {
   for (const d of taxDeadlines()) add(d.date, d.label, 'Tax');
   for (const c of sharedItems('child')) if (c.passportExpiry) add(c.passportExpiry, `${c.name}'s passport`, 'Family');
   for (const c of sharedItems('child')) if (c.ghicExpiry) add(c.ghicExpiry, `${c.name}'s GHIC`, 'Family');
+  for (const d of companyDeadlines()) add(d.date, d.label, d.sub);
+  items.push(...adviceReminders());
   // Travel: the trip itself, plus anything to sort before you go.
   const today = todayISO();
   for (const t of trips()) {
@@ -3310,6 +3325,7 @@ function openTrip(id) {
     nodes.push(el('h3', { class: 'sheet-h', text: 'Before you go' }), list,
       el('p', { class: 'muted small', text: 'Guidance only — always check GOV.UK travel advice for your destination before you travel.' }));
   }
+  nodes.push(tripExtras(t));
   nodes.push(el('h3', { class: 'sheet-h', text: 'Bookings' }));
   const tl = timeline(t);
   if (!tl.length) nodes.push(el('p', { class: 'muted small', text: 'No bookings yet — add flights, hotels, car hire and insurance.' }));
@@ -3481,6 +3497,341 @@ function importTravel(r, addedShared, addedBookings) {
   }
 }
 $('btn-trip-add')?.addEventListener('click', () => openTripEditor());
+
+// ---------- public information via your sync server (nothing personal is sent) ----------
+async function info(kind, params = {}) {
+  if (!paired()) throw new Error('This uses your sync server — set up Life → Sharing & sync first.');
+  const s = settings();
+  const q = new URLSearchParams({ h: await householdId(s.householdCode), ...params });
+  const res = await fetch(`${s.syncUrl.replace(/\/+$/, '')}/info/${kind}?${q}`, { cache: 'no-store', headers: { 'X-Evergreen-Token': await writeToken(s.householdCode) } });
+  let body = {};
+  try { body = await res.json(); } catch { /* not json */ }
+  if (res.status === 404 && !body.error) throw new Error('Your sync server needs updating — it updates itself within a few minutes of an app update.');
+  if (!res.ok) throw new Error(body.error === 'bad id' ? 'your sync server needs updating' : body.error || `the server returned ${res.status}`);
+  return body;
+}
+/** Cached on this phone so screens draw instantly; refreshed in the background when older than maxAgeMs. */
+const infoFailed = new Map(); // key -> when it last failed, so a broken service isn't asked on every redraw
+const infoInflight = new Map(); // key -> the request already on its way
+function infoCached(key, maxAgeMs, load) {
+  const hit = (settings().infoCache || {})[key];
+  const failedRecently = Date.now() - (infoFailed.get(key) || 0) < 10 * 60000;
+  const fresh = (hit && Date.now() - hit.at < maxAgeMs) || failedRecently || infoInflight.has(key);
+  const refresh = () => {
+    if (infoInflight.has(key)) return infoInflight.get(key);
+    if (failedRecently) return Promise.reject(new Error('Not available just now — try again in a few minutes.'));
+    const p = load().then((value) => {
+      const all = settings().infoCache || {};
+      for (const [k, v] of Object.entries(all)) if (Date.now() - v.at > 30 * 86400000) delete all[k]; // keep it small
+      all[key] = { at: Date.now(), value };
+      saveSettings({ infoCache: all });
+      return value;
+    }, (e) => { infoFailed.set(key, Date.now()); throw e; }).finally(() => infoInflight.delete(key));
+    infoInflight.set(key, p);
+    return p;
+  };
+  return { value: hit ? hit.value : null, fresh, refresh };
+}
+
+// ----- energy comparison (worked out on this phone, from your own usage) -----
+const pence = (v) => (v == null || v === '' ? '' : `${Number(v).toLocaleString('en-GB', { maximumFractionDigits: 2 })}p`);
+function energyUsage(u) {
+  const fuels = u.type === 'Electricity' ? ['elec'] : u.type === 'Gas' ? ['gas'] : ['elec', 'gas'];
+  const out = {}; const how = {};
+  const readings = { elec: sharedItems('meter').filter((r) => r.kind === 'Electricity'), gas: sharedItems('meter').filter((r) => r.kind === 'Gas') };
+  for (const f of fuels) {
+    const typed = Number((u.energy || {})[f + 'Kwh']);
+    const fromReadings = yearlyFromReadings(readings[f], f);
+    if (typed > 0) { out[f] = typed; how[f] = 'from your bill'; }
+    else if (fromReadings) { out[f] = fromReadings.kwh; how[f] = `from your meter readings${fromReadings.rough ? ' (rough — under a year of readings)' : ''}`; }
+    else { out[f] = TYPICAL[f]; how[f] = 'a typical home — add your yearly kWh from a bill for a true figure'; }
+  }
+  return { usage: out, how };
+}
+function openEnergyCompare(utilId) {
+  const u = utilities().find((x) => x.id === utilId);
+  if (!u) return;
+  const e = u.energy || {};
+  const fuels = u.type === 'Electricity' ? ['elec'] : u.type === 'Gas' ? ['gas'] : ['elec', 'gas'];
+  const NAME = { elec: 'Electricity', gas: 'Gas' };
+  const inputs = {};
+  const numIn = (key, ph) => { const i = el('input', { type: 'number', inputmode: 'decimal', step: 'any', placeholder: ph }); i.value = e[key] ?? ''; inputs[key] = i; return i; };
+  const rateRows = fuels.map((f) => el('div', {}, el('div', { class: 'child-group', text: NAME[f] }),
+    el('div', { class: 'grid2' }, el('label', { class: 'field' }, 'Unit rate (p/kWh)', numIn(f + 'Unit', f === 'elec' ? 'e.g. 24.5' : 'e.g. 6.8')),
+      el('label', { class: 'field' }, 'Standing charge (p/day)', numIn(f + 'Standing', f === 'elec' ? 'e.g. 53.4' : 'e.g. 31.2'))),
+    el('label', { class: 'field' }, 'Yearly use (kWh) — on your bill as “annual consumption”', numIn(f + 'Kwh', 'optional'))));
+  const region = el('select', {}, el('option', { value: '', text: 'Choose your region…' }), ...REGIONS.map(([v, n]) => el('option', { value: v, text: n })));
+  region.value = e.region || '';
+  const out = el('div', {});
+  const save = () => {
+    const energy = { ...e, region: region.value };
+    for (const [k, i] of Object.entries(inputs)) energy[k] = i.value === '' ? '' : Number(i.value);
+    sharedUpdate(u.id, { energy }); scheduleSync();
+    return energy;
+  };
+  const run = async () => {
+    const energy = save();
+    const current = {};
+    for (const f of fuels) if (energy[f + 'Unit'] !== '' && energy[f + 'Unit'] != null) current[f] = { unit: energy[f + 'Unit'], standing: energy[f + 'Standing'] || 0 };
+    const { usage, how } = energyUsage({ ...u, energy });
+    out.replaceChildren(el('p', { class: 'muted small', text: 'Working it out…' }));
+    const today = todayISO();
+    const cap = capFor(today), next = nextCap(today);
+    const options = [{ name: `Standard variable (price cap, ${cap.label})`, supplier: 'Any supplier’s default tariff', elec: cap.elec, gas: cap.gas, source: 'cap' }];
+    if (next) options.push({ name: `Price cap from ${new Date(next.from + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'long' })}`, supplier: 'If you go onto (or stay on) a standard tariff', elec: next.elec, gas: next.gas, source: 'cap' });
+    for (const q of e.quotes || []) options.push({ ...q, source: 'quote' });
+    let note = '';
+    if (energy.region) {
+      try {
+        const r = await info('energy', { region: energy.region });
+        for (const t of r.tariffs || []) options.push({ name: t.name, supplier: 'Octopus Energy', elec: t.elec, gas: t.gas, source: 'octopus', fixed: t.fixed, term: t.term });
+      } catch (err) { note = `Couldn't load live tariffs: ${err.message}`; }
+    } else note = 'Choose your region to include live tariffs too.';
+    const haveCurrent = Object.keys(current).length === fuels.length;
+    const mine = haveCurrent ? tariffCost(current, usage) : null;
+    const rows = compareTariffs(haveCurrent ? current : { elec: cap.elec, gas: cap.gas }, options, usage);
+    const nodes = [];
+    nodes.push(el('div', { class: 'state-note' },
+      el('div', {}, el('strong', { text: haveCurrent ? `Your deal now: ${money(mine)} a year` : 'Add your current rates above to see what you’d save' })),
+      el('div', { class: 'muted small', text: fuels.map((f) => `${NAME[f]} ${Math.round(usage[f]).toLocaleString('en-GB')} kWh/yr — ${how[f]}`).join(' · ') })));
+    const list = el('ul', { class: 'list energy-list' });
+    for (const r of rows) {
+      const tag = r.saving == null || !haveCurrent ? null : r.saving > 1 ? el('span', { class: 'tag ok', text: `save ${money(r.saving)}/yr` }) : r.saving < -1 ? el('span', { class: 'tag dim', text: `${money(-r.saving)}/yr more` }) : el('span', { class: 'tag dim', text: 'about the same' });
+      const detail = [r.supplier, r.fixed === true ? (r.term ? `${r.term}-month fix` : 'fixed') : r.source === 'octopus' ? 'variable' : '', ...fuels.filter((f) => r[f]).map((f) => `${NAME[f].toLowerCase()} ${pence(r[f].unit)} + ${pence(r[f].standing)}/day`)].filter(Boolean).join(' · ');
+      const li = el('li', {}, el('div', { class: 'line' }, el('div', {}, el('div', { class: 'name', text: `${r.name} — ${money(r.cost)}/yr` }), el('div', { class: 'sub', text: detail })), tag));
+      if (r.source === 'quote') {
+        const del = el('button', { class: 'del', text: '✕', 'aria-label': 'Remove quote ' + r.name });
+        del.addEventListener('click', () => { sharedUpdate(u.id, { energy: { ...(utilities().find((x) => x.id === u.id).energy || {}), quotes: (e.quotes || []).filter((x) => x.id !== r.id) } }); scheduleSync(); openEnergyCompare(u.id); });
+        li.querySelector('.line').append(del);
+      }
+      list.append(li);
+    }
+    nodes.push(list);
+    if (note) nodes.push(el('p', { class: 'muted small', text: note }));
+    nodes.push(el('p', { class: 'muted small', text: 'Live tariffs come from Octopus, the one big supplier that publishes its prices. For everyone else, add any quote you’re given below, or compare on a switching site and add the best one here — Evergreen prices it against your real usage. Guidance only; check exit fees before switching.' }));
+    out.replaceChildren(...nodes);
+  };
+  // add a quote (from a comparison site, a supplier, or Claude's renewal check)
+  const qName = el('input', { type: 'text', placeholder: 'e.g. EDF 12-month fix' });
+  const qIn = {};
+  const qRows = fuels.map((f) => el('div', { class: 'grid2' },
+    el('label', { class: 'field' }, `${NAME[f]} p/kWh`, (qIn[f + 'u'] = el('input', { type: 'number', inputmode: 'decimal', step: 'any' }))),
+    el('label', { class: 'field' }, `${NAME[f]} p/day`, (qIn[f + 's'] = el('input', { type: 'number', inputmode: 'decimal', step: 'any' })))));
+  const qAdd = el('button', { type: 'button', text: 'Add this quote' });
+  qAdd.addEventListener('click', () => {
+    if (!qName.value.trim()) return toast('Name the quote first.');
+    const q = { id: 'q' + uid(), name: qName.value.trim() };
+    for (const f of fuels) if (qIn[f + 'u'].value) q[f] = { unit: Number(qIn[f + 'u'].value), standing: Number(qIn[f + 's'].value) || 0 };
+    if (!fuels.every((f) => q[f])) return toast('Add the unit rate for each fuel.');
+    const cur = utilities().find((x) => x.id === u.id).energy || {};
+    sharedUpdate(u.id, { energy: { ...cur, quotes: [...(cur.quotes || []), q] } }); scheduleSync();
+    toast('Quote added ✓'); openEnergyCompare(u.id);
+  });
+  const go = el('button', { class: 'primary', type: 'button', text: 'Compare' });
+  go.addEventListener('click', run);
+  const close = el('button', { type: 'button', text: 'Close' });
+  close.addEventListener('click', () => { save(); closeSheet(); renderUtilities(); });
+  openSheet(el('h2', { text: `Compare ${u.type.toLowerCase()} deals` }),
+    el('p', { class: 'muted small', text: 'Your rates are on your bill or in your supplier’s app (include VAT). Everything is worked out on this phone — only your region is used to fetch public tariffs.' }),
+    ...rateRows, el('label', { class: 'field' }, 'Region', region),
+    el('div', { class: 'row' }, close, go), out,
+    el('details', { class: 'inner' }, el('summary', { text: '+ Add a quote you’ve been given' }), el('label', { class: 'field' }, 'Name', qName), ...qRows, qAdd));
+  if ((e.elecUnit || e.gasUnit) && region.value) run();
+}
+
+// ----- trains (National Rail live departures) -----
+const STATIONS = [
+  ['EUS', 'London Euston'], ['WFJ', 'Watford Junction'], ['MKC', 'Milton Keynes Central'], ['BLY', 'Bletchley'], ['LBZ', 'Leighton Buzzard'],
+  ['TRI', 'Tring'], ['BKM', 'Berkhamsted'], ['HML', 'Hemel Hempstead'], ['APS', 'Apsley'], ['KGL', 'Kings Langley'], ['BSH', 'Bushey'],
+  ['HRW', 'Harrow & Wealdstone'], ['WMB', 'Wembley Central'], ['NMP', 'Northampton'], ['RUG', 'Rugby'], ['COV', 'Coventry'],
+  ['BHI', 'Birmingham International'], ['BHM', 'Birmingham New Street'], ['WVH', 'Wolverhampton'], ['NUN', 'Nuneaton'], ['TAM', 'Tamworth'],
+  ['LTV', 'Lichfield Trent Valley'], ['STA', 'Stafford'], ['SOT', 'Stoke-on-Trent'], ['CRE', 'Crewe'], ['MAN', 'Manchester Piccadilly'],
+  ['WBQ', 'Warrington Bank Quay'], ['WGN', 'Wigan North Western'], ['PRE', 'Preston'], ['LAN', 'Lancaster'], ['LIV', 'Liverpool Lime Street'],
+  ['CTR', 'Chester'], ['GLC', 'Glasgow Central'],
+];
+const stationName = (crs) => (STATIONS.find(([c]) => c === crs) || [])[1] || crs;
+let trainTimer = null;
+function trainRow(s) {
+  const status = s.cancelled ? el('span', { class: 'tag urgent', text: 'Cancelled' })
+    : s.late ? el('span', { class: 'tag soon', text: /^\d/.test(s.expected) ? `Exp ${s.expected}` : 'Delayed' })
+      : el('span', { class: 'tag ok', text: 'On time' });
+  return el('li', { class: 'train' + (s.cancelled ? ' cancelled' : '') },
+    el('div', { class: 'line' },
+      el('div', {}, el('div', { class: 'name' }, el('span', { class: 'train-time', text: s.due }), ` ${s.to || ''}`),
+        el('div', { class: 'sub', text: [s.platform ? `Platform ${s.platform}` : 'Platform not yet shown', s.operator].filter(Boolean).join(' · ') }),
+        s.reason ? el('div', { class: 'sub train-reason', text: s.reason.charAt(0).toUpperCase() + s.reason.slice(1) }) : null),
+      status));
+}
+async function renderTrains() {
+  const out = $('train-boards');
+  if (!out) return;
+  const s = settings();
+  $('train-home').value = s.trainHome || '';
+  $('train-other-wrap').hidden = $('train-home').value !== 'other';
+  const home = s.trainHome === 'other' ? (s.trainOther || '').toUpperCase() : s.trainHome;
+  if (!home) { out.replaceChildren(el('p', { class: 'muted small', text: 'Choose your station above to see live trains to and from London Euston.' })); return; }
+  if (!paired()) { out.replaceChildren(el('p', { class: 'muted small', text: 'Live trains come through your sync server — set up Life → Sharing & sync first.' })); return; }
+  const boards = [{ title: `${stationName(home)} → London Euston`, from: home, to: 'EUS' }, { title: `London Euston → ${stationName(home)}`, from: 'EUS', to: home }];
+  if (!out.children.length) out.replaceChildren(el('p', { class: 'muted small', text: 'Loading live trains…' }));
+  const results = await Promise.all(boards.map((b) => info('trains', { from: b.from, to: b.to }).catch((e) => ({ error: e.message }))));
+  if (results.some((r) => r.configured === false)) {
+    out.replaceChildren(el('div', { class: 'state-note' }, el('strong', { text: 'One-off setup needed' }),
+      el('p', { class: 'small', text: 'Live trains use the official National Rail feed, which needs a free key. See Help → Live trains for the 5-minute setup.' })));
+    return;
+  }
+  const nodes = [];
+  const msgs = [...new Set(results.flatMap((r) => r.messages || []))];
+  if (msgs.length) nodes.push(el('div', { class: 'state-note train-msg' }, el('strong', { text: '⚠️ Disruption' }), ...msgs.slice(0, 3).map((m) => el('p', { class: 'small', text: m }))));
+  boards.forEach((b, i) => {
+    const r = results[i];
+    const card = el('div', { class: 'card' }, el('h2', { text: b.title }));
+    if (r.error) card.append(el('p', { class: 'status bad', text: r.error }));
+    else if (!r.services?.length) card.append(el('p', { class: 'muted small', text: 'No direct trains in the next two hours.' }));
+    else card.append(el('ul', { class: 'list' }, ...r.services.slice(0, 6).map(trainRow)));
+    nodes.push(card);
+  });
+  nodes.push(el('p', { class: 'muted small', text: `Updated ${new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })} · refreshes every minute while open · National Rail Enquiries` }));
+  out.replaceChildren(...nodes);
+  const bad = results.flatMap((r) => r.services || []).filter((x) => x.cancelled || x.late).length;
+  saveSettings({ trainBad: { n: bad, at: Date.now() } });
+}
+function trainsVisible() { return !$('train-boards')?.classList.contains('sec-off') && $('tab-life')?.classList.contains('active'); }
+function startTrainRefresh() {
+  clearInterval(trainTimer);
+  trainTimer = setInterval(() => { if (document.visibilityState === 'visible' && trainsVisible()) renderTrains(); else clearInterval(trainTimer); }, 60000);
+}
+$('train-home')?.addEventListener('change', (e) => { saveSettings({ trainHome: e.target.value }); $('train-boards').replaceChildren(); renderTrains(); });
+$('train-other')?.addEventListener('change', (e) => { saveSettings({ trainOther: e.target.value.trim().toUpperCase() }); $('train-boards').replaceChildren(); renderTrains(); });
+$('btn-train-refresh')?.addEventListener('click', () => { renderTrains(); haptic(); });
+
+// ----- bank holidays (GOV.UK) in the family calendar -----
+function bankHolidayRows(fromISO, toISO) {
+  const c = infoCached('bankhols', 7 * 86400000, () => info('bankholidays'));
+  if (!c.fresh && paired()) c.refresh().then(() => renderCalendar()).catch(() => {});
+  return ((c.value && c.value.events) || []).filter((e) => e.date >= fromISO && e.date <= toISO)
+    .map((e) => ({ id: 'bh-' + e.date, title: `🇬🇧 ${e.title}`, date: e.date, time: '', who: 'Bank holiday', virtual: true }));
+}
+
+// ----- trips: weather, travel advice changes, currency -----
+const CURRENCY = { US: 'USD', TR: 'TRY', CH: 'CHF', CZ: 'CZK', HU: 'HUF', PL: 'PLN', DK: 'DKK', NO: 'NOK', SE: 'SEK', IS: 'ISK', RO: 'RON', CA: 'CAD', AU: 'AUD', NZ: 'NZD', JP: 'JPY', ZA: 'ZAR', MX: 'MXN', IN: 'INR', TH: 'THB' };
+const EURO = ['AT', 'BE', 'BG', 'CY', 'DE', 'EE', 'ES', 'FI', 'FR', 'GR', 'HR', 'IE', 'IT', 'LT', 'LU', 'LV', 'MT', 'NL', 'PT', 'SI', 'SK'];
+const currencyOf = (iso) => (EURO.includes(iso) ? 'EUR' : CURRENCY[iso] || '');
+const WX = (c) => (c === 0 ? '☀️' : c <= 2 ? '🌤️' : c === 3 ? '☁️' : c <= 48 ? '🌫️' : c <= 67 ? '🌧️' : c <= 77 ? '🌨️' : c <= 82 ? '🌦️' : c <= 86 ? '🌨️' : '⛈️');
+function tripPlace(t) {
+  const flight = timeline(t).find((b) => b.kind === 'flight' && b.to);
+  const stay = (t.bookings || []).find((b) => b.kind === 'stay' && b.address);
+  const d = (t.destinations || [])[0];
+  return (d && d.country && !/^[A-Z]{2}$/.test(d.country) ? d.country : '') || (stay && stay.address.split(',').pop().trim()) || (d && countryName(d.iso)) || (flight && flight.to) || '';
+}
+/** Extra live panels for a trip sheet. Fills in as answers arrive. */
+function tripExtras(t) {
+  const box = el('div', {});
+  if (!paired()) return box;
+  const today = todayISO();
+  const until = daysBetween(today, t.start || today);
+  const iso = (t.destinations || [])[0]?.iso;
+  // Travel advice
+  const slug = adviceSlug(iso);
+  if (slug) {
+    const adv = el('div', {}, el('h3', { class: 'sheet-h', text: 'GOV.UK travel advice' }));
+    box.append(adv);
+    const draw = (a) => {
+      if (!a || a.error) return;
+      const seen = (settings().adviceSeen || {})[t.id + ':' + slug];
+      const isNew = seen && seen !== a.updated;
+      adv.append(el('p', { class: 'small' }, isNew ? el('span', { class: 'tag soon', text: 'Updated', style: 'margin-right:6px' }) : null,
+        `Last updated ${new Date(a.updated).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}: ${a.change || 'see GOV.UK'} `, el('a', { href: a.url, target: '_blank', rel: 'noopener', text: 'Read ›' })));
+      if (a.alert && a.alert.length) adv.append(el('p', { class: 'status bad', text: 'The FCDO has warnings in place for parts of this country — read the advice before you go.' }));
+      saveSettings({ adviceSeen: { ...(settings().adviceSeen || {}), [t.id + ':' + slug]: a.updated } });
+    };
+    const c = infoCached('advice:' + slug, 3 * 3600000, () => info('advice', { country: slug }));
+    if (c.value) draw(c.value); else c.refresh().then(draw).catch(() => adv.remove());
+  }
+  // Weather: the forecast covers about 16 days ahead
+  const place = tripPlace(t);
+  if (place && until <= 15 && t.end >= today) {
+    const wx = el('div', {}, el('h3', { class: 'sheet-h', text: 'Weather' }));
+    box.append(wx);
+    const wc = infoCached('wx:' + place.toLowerCase(), 3 * 3600000, () => info('weather', { place }));
+    (wc.value && wc.fresh ? Promise.resolve(wc.value) : wc.refresh()).then((w) => {
+      const days = (w.days || []).filter((d) => d.date >= t.start && d.date <= t.end);
+      if (!days.length) return wx.remove();
+      wx.append(el('div', { class: 'wx-row' }, ...days.slice(0, 10).map((d) => el('div', { class: 'wx-day' },
+        el('div', { class: 'muted small', text: new Date(d.date + 'T00:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric' }) }),
+        el('div', { class: 'wx-ico', text: WX(d.code) }), el('div', { class: 'small', text: `${Math.round(d.max)}° / ${Math.round(d.min)}°` }),
+        d.rain != null ? el('div', { class: 'muted small', text: `💧${d.rain}%` }) : null))),
+      el('p', { class: 'muted small', text: `${w.place} · Open-Meteo forecast` }));
+    }).catch(() => wx.remove());
+  }
+  // Money
+  const cur = currencyOf(iso);
+  if (cur && t.end >= today) {
+    const fx = el('p', { class: 'small' });
+    box.append(fx);
+    const fc = infoCached('fx:' + cur, 6 * 3600000, () => info('fx', { currency: cur }));
+    (fc.value && fc.fresh ? Promise.resolve(fc.value) : fc.refresh()).then((r) => { if (r.rate) fx.textContent = `💷 £1 = ${r.rate.toLocaleString('en-GB', { maximumFractionDigits: 2 })} ${cur} (European Central Bank rate, ${fmtDate(r.date)}) · £100 ≈ ${Math.round(r.rate * 100).toLocaleString('en-GB')} ${cur}`; }).catch(() => fx.remove());
+  }
+  return box;
+}
+/** Home reminder when GOV.UK changes its advice for somewhere you're going. */
+function adviceReminders() {
+  const items = [];
+  const today = todayISO();
+  for (const t of trips()) {
+    if (!t.start || t.end < today || daysBetween(today, t.start) > 90) continue;
+    const slug = adviceSlug((t.destinations || [])[0]?.iso);
+    if (!slug) continue;
+    const c = infoCached('advice:' + slug, 6 * 3600000, () => info('advice', { country: slug }));
+    if (!c.fresh && paired()) c.refresh().then(() => renderDashboard()).catch(() => {});
+    const a = c.value;
+    if (!a || !a.updated) continue;
+    const key = t.id + ':' + slug;
+    const seen = (settings().adviceSeen || {})[key];
+    if (!seen) { saveSettings({ adviceSeen: { ...(settings().adviceSeen || {}), [key]: a.updated } }); continue; } // first look sets the baseline
+    if (seen !== a.updated) items.push({ label: `Travel advice changed — ${countryName((t.destinations || [])[0]?.iso, 'your destination')}`, sub: `Travel · ${a.change || 'GOV.UK updated its advice'}`, days: Math.max(0, daysBetween(today, t.start)), level: 'soon', text: 'read', go: () => openTrip(t.id) });
+  }
+  return items;
+}
+
+// ----- Companies House: your company's filing deadlines (Money & tax) -----
+const addMonthsISO = (iso, n, plusDays = 0) => { const d = new Date(iso + 'T00:00:00Z'); const day = d.getUTCDate(); d.setUTCDate(1); d.setUTCMonth(d.getUTCMonth() + n); d.setUTCDate(Math.min(day, new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)).getUTCDate())); d.setUTCDate(d.getUTCDate() + plusDays); return d.toISOString().slice(0, 10); };
+function companyDeadlines() {
+  const num = (settings().companyNumber || '').trim();
+  if (!num) return [];
+  const c = infoCached('company:' + num, 24 * 3600000, () => info('company', { number: num }));
+  if (!c.fresh && paired()) c.refresh().then(() => { renderDashboard(); renderCompany(); }).catch(() => {});
+  const v = c.value;
+  if (!v || !v.configured || v.error) return [];
+  const out = [];
+  if (v.confirmationDue) out.push({ date: v.confirmationDue, label: 'Confirmation statement', sub: 'Companies House' });
+  if (v.accountsDue) out.push({ date: v.accountsDue, label: 'Company accounts to Companies House', sub: 'Companies House' });
+  if (v.accountsMadeUpTo) {
+    // Corporation Tax (guidance): pay 9 months + 1 day after the period ends; file the CT600 within 12 months.
+    out.push({ date: addMonthsISO(v.accountsMadeUpTo, 9, 1), label: 'Corporation Tax payment', sub: 'HMRC (company)' });
+    out.push({ date: addMonthsISO(v.accountsMadeUpTo, 12), label: 'Company tax return (CT600)', sub: 'HMRC (company)' });
+  }
+  return out;
+}
+function renderCompany() {
+  const out = $('company-out');
+  if (!out) return;
+  const num = (settings().companyNumber || '').trim();
+  $('company-number').value = num;
+  if (!num) { out.replaceChildren(); return; }
+  const c = infoCached('company:' + num, 24 * 3600000, () => info('company', { number: num }));
+  const v = c.value;
+  if (!v) { out.replaceChildren(el('p', { class: 'muted small', text: paired() ? 'Checking Companies House…' : 'This uses your sync server — set up Sharing & sync first.' })); if (paired()) c.refresh().then(renderCompany).catch((e) => setStatus('company-status', e.message, true)); return; }
+  if (v.configured === false) { out.replaceChildren(el('p', { class: 'muted small', text: 'Needs a free Companies House key on your sync server — see Help → Company deadlines.' })); return; }
+  if (v.error) { out.replaceChildren(el('p', { class: 'status bad', text: v.error })); return; }
+  const list = el('ul', { class: 'list' });
+  for (const d of companyDeadlines()) {
+    const cd = countdown(d.date, d.label);
+    list.append(el('li', {}, el('div', { class: 'line' }, el('div', {}, el('div', { class: 'name', text: d.label }), el('div', { class: 'sub', text: `${d.sub} · ${fmtDate(d.date)}` })), cd ? el('span', { class: 'tag ' + cd.level, text: cd.text.replace(d.label + ' ', '') }) : null)));
+  }
+  out.replaceChildren(el('p', { class: 'small' }, el('strong', { text: v.name || num }), ` · ${v.status || ''}`), list,
+    el('p', { class: 'muted small', text: 'From Companies House. Corporation Tax dates are worked out from your accounting period — guidance only, check with your accountant.' }));
+}
+$('company-number')?.addEventListener('change', (e) => { saveSettings({ companyNumber: e.target.value.trim().toUpperCase().replace(/\s/g, '') }); renderCompany(); renderDashboard(); });
 
 // ---------- Family: key details for the children (shared, encrypted) ----------
 const CHILD_GROUPS = [
@@ -3937,7 +4288,7 @@ function renderLost() {
 
 // ---------- app updates ----------
 // Must match CACHE in sw.js (a test checks this).
-const APP_VERSION = 'evergreen-v58';
+const APP_VERSION = 'evergreen-v59';
 let updateReady = false;
 async function checkForUpdate(manual = false) {
   try {
