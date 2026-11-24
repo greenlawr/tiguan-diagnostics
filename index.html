@@ -15,10 +15,41 @@
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <div id="lock-screen" class="lock">
+  <div id="lock-screen" class="lock splash">
+    <div class="splash-glow" aria-hidden="true"></div>
+    <div class="splash-lights" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
     <div class="lock-box">
-      <img class="lock-icon" src="icon.svg" alt="" aria-hidden="true">
-      <h1>Evergreen</h1>
+      <svg class="splash-tree" viewBox="150 70 724 830" aria-hidden="true">
+        <defs>
+          <linearGradient id="sp-trunk" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f3e3c3"/><stop offset="1" stop-color="#cdb184"/></linearGradient>
+          <filter id="sp-blur" x="-20%" y="-20%" width="140%" height="160%"><feGaussianBlur stdDeviation="16"/></filter>
+          <clipPath id="sp-t0"><path d="M512,430 L812,790 L212,790 Z" stroke="#000" stroke-width="44" stroke-linejoin="round"/></clipPath>
+          <clipPath id="sp-t1"><path d="M512,300 L744,610 L280,610 Z" stroke="#000" stroke-width="44" stroke-linejoin="round"/></clipPath>
+          <clipPath id="sp-t2"><path d="M512,180 L672,420 L352,420 Z" stroke="#000" stroke-width="44" stroke-linejoin="round"/></clipPath>
+        </defs>
+        <g class="sp-sway">
+          <rect class="sp-trunk" x="474" y="770" width="76" height="110" rx="18" fill="url(#sp-trunk)"/>
+          <g class="sp-tier sp-tier0">
+            <path d="M512,430 L812,790 L212,790 Z" transform="translate(0,24)" fill="#02170d" opacity=".45" stroke="#02170d" stroke-width="44" stroke-linejoin="round" filter="url(#sp-blur)"/>
+            <path d="M512,430 L812,790 L212,790 Z" fill="#23a865" stroke="#23a865" stroke-width="44" stroke-linejoin="round"/>
+            <g clip-path="url(#sp-t0)"><rect x="0" y="0" width="512" height="1024" fill="#4fd98f"/></g>
+          </g>
+          <g class="sp-tier sp-tier1">
+            <path d="M512,300 L744,610 L280,610 Z" transform="translate(0,24)" fill="#02170d" opacity=".45" stroke="#02170d" stroke-width="44" stroke-linejoin="round" filter="url(#sp-blur)"/>
+            <path d="M512,300 L744,610 L280,610 Z" fill="#45c47f" stroke="#45c47f" stroke-width="44" stroke-linejoin="round"/>
+            <g clip-path="url(#sp-t1)"><rect x="0" y="0" width="512" height="1024" fill="#86ebb0"/></g>
+          </g>
+          <g class="sp-tier sp-tier2">
+            <path d="M512,180 L672,420 L352,420 Z" transform="translate(0,24)" fill="#02170d" opacity=".45" stroke="#02170d" stroke-width="44" stroke-linejoin="round" filter="url(#sp-blur)"/>
+            <path d="M512,180 L672,420 L352,420 Z" fill="#86dcaa" stroke="#86dcaa" stroke-width="44" stroke-linejoin="round"/>
+            <g clip-path="url(#sp-t2)"><rect x="0" y="0" width="512" height="1024" fill="#c9f8db"/></g>
+          </g>
+          <path class="sp-star" d="M512,72 C517,100 528,111 556,116 C528,121 517,132 512,160 C507,132 496,121 468,116 C496,111 507,100 512,72 Z" fill="#fff6d6"/>
+        </g>
+      </svg>
+      <h1 class="splash-title">Evergreen</h1>
+      <p class="splash-sub">The Green Family HQ</p>
+      <div class="splash-form">
       <p id="lock-intro" class="muted"></p>
       <form id="lock-form">
         <input id="lock-pass" type="password" autocomplete="off" placeholder="Passphrase" aria-label="Passphrase">
@@ -28,6 +59,7 @@
       </form>
       <button id="btn-biometric" class="big" type="button" hidden>Unlock with fingerprint</button>
       <button id="lock-reset" class="link" type="button" hidden>Forgotten your passphrase?</button>
+      </div>
     </div>
   </div>
 

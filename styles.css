@@ -592,3 +592,89 @@ input[type=checkbox] { accent-color: var(--accent); width: 22px; height: 22px; f
 .brief-list li.tappable { cursor: pointer; }
 .brief-list li.tappable::after { content: '›'; margin-left: auto; color: var(--muted); padding-left: 8px; }
 .brief-ico { width: 22px; flex: 0 0 22px; text-align: center; }
+
+/* ---------- Opening screen: "Evergreen — The Green Family HQ" ---------- */
+#lock-screen.splash {
+  background: radial-gradient(120% 80% at 50% 18%, #1c7a4b 0%, #0d4f30 45%, #052a19 100%);
+  color: #f2fbf5;
+  overflow: hidden;
+  padding-top: max(24px, env(safe-area-inset-top));
+  padding-bottom: max(24px, env(safe-area-inset-bottom));
+}
+.splash .lock-box { position: relative; z-index: 1; }
+/* a soft light that drifts very slowly behind the tree */
+.splash-glow {
+  position: absolute; left: 50%; top: 22%; width: 120vmax; height: 120vmax; margin: -60vmax 0 0 -60vmax;
+  background: radial-gradient(closest-side, rgba(134, 235, 176, .22), rgba(134, 235, 176, 0) 70%);
+  animation: sp-glow 9s ease-in-out infinite alternate;
+}
+@keyframes sp-glow { from { transform: translate(-3%, -2%) scale(.95); } to { transform: translate(3%, 2%) scale(1.05); } }
+/* a few tiny lights floating upwards */
+.splash-lights i {
+  position: absolute; bottom: -12px; width: 5px; height: 5px; border-radius: 50%;
+  background: #d9ffe8; box-shadow: 0 0 10px 2px rgba(201, 248, 219, .55); opacity: 0;
+  animation: sp-rise 11s linear infinite;
+}
+.splash-lights i:nth-child(1) { left: 12%; animation-delay: .5s; }
+.splash-lights i:nth-child(2) { left: 26%; animation-delay: 4.2s; animation-duration: 13s; width: 4px; height: 4px; }
+.splash-lights i:nth-child(3) { left: 41%; animation-delay: 7.5s; }
+.splash-lights i:nth-child(4) { left: 58%; animation-delay: 2.1s; animation-duration: 14s; }
+.splash-lights i:nth-child(5) { left: 72%; animation-delay: 5.8s; width: 3px; height: 3px; }
+.splash-lights i:nth-child(6) { left: 86%; animation-delay: 1.2s; animation-duration: 12s; }
+.splash-lights i:nth-child(7) { left: 34%; animation-delay: 9.4s; width: 3px; height: 3px; }
+.splash-lights i:nth-child(8) { left: 64%; animation-delay: 8.1s; animation-duration: 15s; }
+.splash-lights i:nth-child(9) { left: 92%; animation-delay: 6.6s; width: 4px; height: 4px; }
+@keyframes sp-rise {
+  0% { transform: translate(0, 0); opacity: 0; }
+  12% { opacity: .8; }
+  50% { transform: translate(14px, -50vh); }
+  85% { opacity: .5; }
+  100% { transform: translate(-8px, -100vh); opacity: 0; }
+}
+/* the tree grows in, tier by tier, then sways a little */
+.splash-tree { width: 132px; height: 152px; display: block; margin: 0 auto 10px; overflow: visible; filter: drop-shadow(0 14px 22px rgba(0, 0, 0, .28)); }
+.sp-sway { transform-box: view-box; transform-origin: 512px 880px; animation: sp-sway 7s ease-in-out 1.6s infinite; }
+@keyframes sp-sway { 0%, 100% { transform: rotate(0deg); } 30% { transform: rotate(1.4deg); } 70% { transform: rotate(-1.2deg); } }
+.sp-tier, .sp-trunk { transform-box: fill-box; transform-origin: 50% 100%; opacity: 0; animation: sp-grow .75s cubic-bezier(.2, .9, .25, 1.15) forwards; }
+.sp-trunk { animation-delay: .1s; }
+.sp-tier0 { animation-delay: .25s; }
+.sp-tier1 { animation-delay: .45s; }
+.sp-tier2 { animation-delay: .65s; }
+@keyframes sp-grow { from { opacity: 0; transform: translateY(26px) scale(.82); } to { opacity: 1; transform: none; } }
+.sp-star { transform-box: fill-box; transform-origin: 50% 50%; opacity: 0; animation: sp-star-in .6s ease-out 1.15s forwards, sp-twinkle 3.6s ease-in-out 1.8s infinite; filter: drop-shadow(0 0 10px rgba(255, 233, 168, .9)); }
+@keyframes sp-star-in { from { opacity: 0; transform: scale(.2) rotate(-40deg); } to { opacity: 1; transform: none; } }
+@keyframes sp-twinkle { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: .65; transform: scale(.86); } }
+/* wordmark */
+.splash-title {
+  font-family: 'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia, 'Times New Roman', serif;
+  font-size: 44px !important; font-weight: 600; letter-spacing: .5px; line-height: 1.05; margin: 0 !important;
+  background: linear-gradient(100deg, #ffffff 0%, #ffffff 40%, #c9f8db 50%, #ffffff 60%, #ffffff 100%);
+  background-size: 250% 100%; background-position: 100% 0;
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+  opacity: 0; animation: sp-fade-up .7s ease-out .9s forwards, sp-shimmer 2.4s ease-in-out 1.6s 1 forwards;
+}
+.splash-sub {
+  margin: 8px 0 0; font-size: 13px; font-weight: 600; letter-spacing: .28em; text-transform: uppercase; color: #a8e9c2;
+  opacity: 0; animation: sp-fade-up .7s ease-out 1.15s forwards;
+}
+@keyframes sp-fade-up { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+@keyframes sp-shimmer { from { background-position: 100% 0; } to { background-position: 0 0; } }
+.splash-form { margin-top: 26px; opacity: 0; animation: sp-fade-up .6s ease-out 1.35s forwards; }
+.splash .lock-box form { margin-top: 0; }
+.splash #lock-intro { color: rgba(242, 251, 245, .78); margin: 0 0 14px; }
+.splash .lock-box input {
+  color: #fff; background: rgba(255, 255, 255, .1); border: 1px solid rgba(255, 255, 255, .28);
+  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+}
+.splash .lock-box input::placeholder { color: rgba(255, 255, 255, .62); }
+.splash .lock-box input:focus { outline: 2px solid #86ebb0; outline-offset: 1px; border-color: transparent; }
+.splash button.primary { background: #f2fbf5; color: #0b4a2c; border: 0; }
+.splash button.big:not(.primary) { background: rgba(255, 255, 255, .12); color: #fff; border: 1px solid rgba(255, 255, 255, .28); }
+.splash button.link { color: #c9f8db; }
+.splash .status.error, .splash #lock-error { color: #ffb4ab; }
+.splash .muted { color: rgba(242, 251, 245, .75); }
+@media (prefers-reduced-motion: reduce) {
+  .splash *, .splash-glow { animation: none !important; opacity: 1 !important; transform: none !important; }
+  .splash-lights { display: none; }
+  .splash-title { color: #fff; background: none; }
+}

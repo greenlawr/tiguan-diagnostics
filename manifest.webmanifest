@@ -1,9 +1,9 @@
 {
-  "name": "Evergreen",
+  "name": "Evergreen — The Green Family HQ",
   "short_name": "Evergreen",
   "start_url": "./",
   "display": "standalone",
-  "background_color": "#f3f6f4",
+  "background_color": "#0b4a2c",
   "theme_color": "#17804c",
   "icons": [
     {
@@ -57,5 +57,6 @@
       "name": "Add delivery",
       "url": "./?action=delivery"
     }
-  ]
+  ],
+  "description": "Evergreen — the Green Family HQ: calendar, lists, travel, documents and home admin in one private place."
 }

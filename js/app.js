@@ -168,6 +168,17 @@ function showTab(name) {
 document.querySelectorAll('.tabs button').forEach((btn) => btn.addEventListener('click', () => showTab(btn.dataset.tab)));
 document.querySelectorAll('.nav-pill').forEach((btn) => btn.addEventListener('click', () => showTab(btn.dataset.go)));
 
+// The phone's status bar matches the dark green opening screen, then the app.
+(() => {
+  const meta = document.querySelector('meta[name="theme-color"]');
+  const lock = $('lock-screen');
+  if (!meta || !lock) return;
+  const appColour = meta.content;
+  const apply = () => { meta.content = lock.hidden ? appColour : '#0d4f30'; };
+  new MutationObserver(apply).observe(lock, { attributes: true, attributeFilter: ['hidden'] });
+  apply();
+})();
+
 // ---------- Android back button / back gesture: go up one level, exit only from Home ----------
 // Each open level (a tab other than Home, a Life section, a sheet, a full-screen
 // viewer) gets one browser history entry, so "back" closes the top one.
@@ -4626,7 +4637,7 @@ function renderLost() {
 
 // ---------- app updates ----------
 // Must match CACHE in sw.js (a test checks this).
-const APP_VERSION = 'evergreen-v63';
+const APP_VERSION = 'evergreen-v64';
 let updateReady = false;
 async function checkForUpdate(manual = false) {
   try {
