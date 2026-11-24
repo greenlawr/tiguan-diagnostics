@@ -570,3 +570,15 @@ input[type=checkbox] { accent-color: var(--accent); width: 22px; height: 22px; f
 .wx-day { flex: 0 0 64px; text-align: center; background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 6px 4px; }
 .wx-ico { font-size: 22px; }
 .energy-list .name { font-size: 15px; }
+/* Home weather */
+.wx-now { display: flex; align-items: baseline; gap: 6px; }
+.wx-big { font-size: 30px; line-height: 1; }
+.wx-temp { font-size: 30px; font-weight: 800; }
+.weather-card .wx-row { margin-top: 4px; }
+.wx-warn { display: block; margin-top: 10px; padding: 10px 12px; border-radius: 12px; color: var(--text); text-decoration: none; background: #fff6cc; border-left: 5px solid #f2c200; }
+.wx-warn.amber { background: #ffe6c7; border-left-color: #f08a00; }
+.wx-warn.red { background: #ffd9d6; border-left-color: #d22; }
+@media (prefers-color-scheme: dark) { .wx-warn { background: rgba(242,194,0,.16); } .wx-warn.amber { background: rgba(240,138,0,.18); } .wx-warn.red { background: rgba(221,34,34,.2); } }
+.weather-card > .line > div:first-child { flex: 1; min-width: 0; }
+.weather-card > .line > .link { width: auto; flex: 0 0 auto; align-self: flex-start; }
+.wx-now { flex-wrap: nowrap; white-space: nowrap; }

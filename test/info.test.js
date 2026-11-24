@@ -99,3 +99,19 @@ test('bank holidays, travel advice, weather, currency and Companies House', asyn
   assert.deepEqual([c.accountsDue, c.confirmationDue], ['2027-06-30', '2027-03-14']);
   assert.equal((await call('company?number=123')).status, 400);
 });
+
+test('home weather for Berkhamsted, and Met Office warnings for your area only', async () => {
+  const seen = mockFetch([
+    ['geocoding-api', { results: [{ name: 'Berkhamsted', admin2: 'Hertfordshire', latitude: 51.76, longitude: -0.56 }] }],
+    ['api.open-meteo.com', { current: { temperature_2m: 8.2, apparent_temperature: 5.1, weather_code: 3, wind_speed_10m: 12, wind_gusts_10m: 25, time: '2026-11-24T08:00' }, hourly: { time: ['2026-11-24T09:00'], temperature_2m: [9], precipitation_probability: [70], weather_code: [61] }, daily: { time: ['2026-11-24'], weather_code: [61], temperature_2m_max: [11], temperature_2m_min: [4], precipitation_probability_max: [80], sunrise: ['2026-11-24T07:38'], sunset: ['2026-11-24T16:02'], uv_index_max: [0.8] } }],
+  ]);
+  const { call } = await setup();
+  const w = (await call('home-weather?place=Berkhamsted')).body;
+  assert.deepEqual([w.place, w.region, w.now.temp, w.days[0].max, w.hours[0].rain], ['Berkhamsted', 'East of England', 8.2, 11, 70]);
+  assert.match(seen[0].url, /countryCode=GB/);
+  const { parseWarnings } = await import('../sync-worker/info.js');
+  const xml = '<rss><item><title>Yellow warning of rain affecting East of England</title><description><![CDATA[Flooding possible. Hertfordshire]]></description><link>https://m/1</link></item><item><title>Amber warning of snow affecting Highlands</title><description>x</description></item></rss>';
+  const out = parseWarnings(xml, ['Hertfordshire', 'East of England']);
+  assert.equal(out.length, 1);
+  assert.equal(out[0].level, 'yellow');
+});

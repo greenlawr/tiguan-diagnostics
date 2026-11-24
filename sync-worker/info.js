@@ -121,6 +121,42 @@ export async function fx(currency) {
   return { currency, rate: j.rates && j.rates[currency], date: j.date };
 }
 
+// ---------- weather at home (Open-Meteo, Met Office model data for the UK) ----------
+const COUNTY_REGION = { hertfordshire: 'East of England', bedfordshire: 'East of England', 'central bedfordshire': 'East of England', essex: 'East of England', cambridgeshire: 'East of England', norfolk: 'East of England', suffolk: 'East of England',
+  buckinghamshire: 'London & South East England', oxfordshire: 'London & South East England', berkshire: 'London & South East England', surrey: 'London & South East England', kent: 'London & South East England', hampshire: 'London & South East England', 'greater london': 'London & South East England', 'east sussex': 'London & South East England', 'west sussex': 'London & South East England',
+  northamptonshire: 'East Midlands', leicestershire: 'East Midlands', warwickshire: 'West Midlands', 'west midlands': 'West Midlands' };
+export async function localWeather(place) {
+  const g = await getJson('https://geocoding-api.open-meteo.com/v1/search?count=1&language=en&countryCode=GB&name=' + encodeURIComponent(place));
+  const hit = g.results && g.results[0];
+  if (!hit) return { error: "couldn't find that place in the UK" };
+  const f = await getJson(`https://api.open-meteo.com/v1/forecast?latitude=${hit.latitude}&longitude=${hit.longitude}&timezone=Europe%2FLondon&forecast_days=7`
+    + '&current=temperature_2m,apparent_temperature,weather_code,wind_speed_10m,wind_gusts_10m&wind_speed_unit=mph'
+    + '&hourly=temperature_2m,precipitation_probability,weather_code&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunrise,sunset,uv_index_max');
+  const c = f.current || {}, h = f.hourly || {}, d = f.daily || {};
+  const county = hit.admin2 || '';
+  return {
+    place: hit.name, county, region: COUNTY_REGION[county.toLowerCase()] || '',
+    now: { temp: c.temperature_2m, feels: c.apparent_temperature, code: c.weather_code, wind: c.wind_speed_10m, gusts: c.wind_gusts_10m, at: c.time },
+    hours: (h.time || []).map((t, i) => ({ t, temp: h.temperature_2m?.[i], rain: h.precipitation_probability?.[i], code: h.weather_code?.[i] })),
+    days: (d.time || []).map((t, i) => ({ date: t, code: d.weather_code?.[i], max: d.temperature_2m_max?.[i], min: d.temperature_2m_min?.[i], rain: d.precipitation_probability_max?.[i], sunrise: d.sunrise?.[i], sunset: d.sunset?.[i], uv: d.uv_index_max?.[i] })),
+  };
+}
+// Met Office severe-weather warnings (UK feed), filtered to your county / region.
+export function parseWarnings(xml, terms) {
+  const items = [...String(xml).matchAll(/<item>([\s\S]*?)<\/item>/g)].map((m) => {
+    const get = (tag) => ((m[1].match(new RegExp(`<${tag}>(?:<!\\[CDATA\\[)?([\\s\\S]*?)(?:\\]\\]>)?<\/${tag}>`)) || [])[1] || '').replace(/<[^>]+>/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&#39;|&apos;/g, "'").replace(/&quot;/g, '"').replace(/\s+/g, ' ').trim();
+    return { title: get('title'), text: get('description'), link: get('link') };
+  });
+  const want = terms.filter(Boolean).map((t) => t.toLowerCase());
+  return items.filter((w) => w.title && want.some((t) => (w.title + ' ' + w.text).toLowerCase().includes(t)))
+    .map((w) => ({ ...w, level: /red/i.test(w.title) ? 'red' : /amber/i.test(w.title) ? 'amber' : 'yellow' }));
+}
+export async function warnings(terms) {
+  const r = await fetch('https://www.metoffice.gov.uk/public/data/PWSCache/WarningsRSS/Region/UK', { headers: UA });
+  if (!r.ok) throw new Error('Met Office returned ' + r.status);
+  return { warnings: parseWarnings(await r.text(), terms), source: 'Met Office' };
+}
+
 // ---------- Companies House: filing deadlines for your company ----------
 export async function company(env, number) {
   if (!env.COMPANIES_HOUSE_KEY) return { configured: false };
@@ -163,6 +199,16 @@ export async function handleInfo(env, url, kind) {
         const place = q('place');
         if (!place || place.length > 60) return { status: 400, body: { error: 'bad place' } };
         return { body: await cached(env, 'wx:' + place.toLowerCase(), 3 * 3600, () => weather(place)) };
+      }
+      case 'home-weather': {
+        const place = q('place');
+        if (!place || place.length > 60) return { status: 400, body: { error: 'bad place' } };
+        return { body: await cached(env, 'hw:' + place.toLowerCase(), 30 * 60, () => localWeather(place)) };
+      }
+      case 'warnings': {
+        const terms = q('terms').split('|').map((t) => t.trim()).filter((t) => t && t.length <= 40).slice(0, 4);
+        if (!terms.length) return { status: 400, body: { error: 'bad area' } };
+        return { body: await cached(env, 'warn:' + terms.join('|').toLowerCase(), 15 * 60, () => warnings(terms)) };
       }
       case 'fx': {
         const c = q('currency').toUpperCase();

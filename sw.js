@@ -1,5 +1,5 @@
 // Offline support: network first (so updates arrive), cached copy when there is no signal.
-const CACHE = 'evergreen-v59';
+const CACHE = 'evergreen-v60';
 const FILES = [
   './', 'index.html', 'styles.css', 'icon.svg', 'icon-192.png', 'icon-512.png', 'icon-maskable-512.png', 'apple-touch-icon.png', 'manifest.webmanifest',
   'js/app.js', 'js/appconnect.js', 'js/ble.js', 'js/biometric.js', 'js/deliveries.js', 'js/dtc.js', 'js/elm.js', 'js/explain.js', 'js/garage.js', 'js/household.js', 'js/ical.js', 'js/icons.js',
@@ -35,4 +35,25 @@ self.addEventListener('fetch', (event) => {
   // On a weak signal, don't wait forever: after 4 seconds use the saved copy (if there is one).
   const slow = new Promise((resolve) => setTimeout(() => cached().then((r) => r && resolve(r)), 4000));
   event.respondWith(Promise.race([network.catch(() => cached().then((r) => r || Promise.reject(new Error('offline')))), slow]));
+});
+
+// Notifications from your partner's phone (via your sync server). The message only
+// says who added how many things; tapping it opens Evergreen, which syncs the details.
+self.addEventListener('push', (event) => {
+  let msg = { title: 'Evergreen', body: 'Your partner added something — tap to see' };
+  try { if (event.data) msg = { ...msg, ...event.data.json() }; } catch { /* keep the default */ }
+  event.waitUntil((async () => {
+    const wins = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    for (const w of wins) w.postMessage('evergreen-sync'); // if it's open, fetch the new things now
+    await self.registration.showNotification(msg.title, { body: msg.body, tag: 'evergreen-partner', renotify: true, icon: 'icon-192.png', badge: 'icon-192.png', data: { url: './' } });
+  })());
+});
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  event.waitUntil((async () => {
+    const wins = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    const open = wins.find((w) => 'focus' in w);
+    if (open) { open.postMessage('evergreen-sync'); return open.focus(); }
+    return self.clients.openWindow('./');
+  })());
 });

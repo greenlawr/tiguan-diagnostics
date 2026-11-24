@@ -206,6 +206,7 @@ function showLifeSection(name) {
   window.scrollTo(0, 0);
   if (name === 'trains') { renderTrains(); startTrainRefresh(); } else clearInterval(trainTimer);
   if (name === 'tax') renderCompany();
+  if (name === 'sharing') renderPush();
 }
 function goLife(section) {
   pendingLifeSection = section;
@@ -1513,6 +1514,8 @@ function renderDashboard() {
   );
   out.replaceChildren();
   renderToday(out);
+  const wx = weatherCard();
+  if (wx) out.append(wx);
   out.append(card);
 
   if (isAppEmpty()) out.append(welcomeCard());
@@ -2213,6 +2216,16 @@ function scheduleSync() {
 // Calls made while a sync is running share it (so callers can await it).
 const TOMBSTONE_DAYS = 60;
 let syncPromise = null;
+// Things worth a "Jess added…" note (not calendar-feed events, meter readings or housekeeping).
+const NOTIFY_TYPES = ['shop', 'task', 'bill', 'delivery', 'event', 'trip', 'child', 'utility'];
+const notable = (it) => it && !it.deleted && NOTIFY_TYPES.includes(it.type || 'shop') && !(it.type === 'event' && it.src);
+let knownIds = null; // shared items this phone has already seen
+function sharedLabel(it) {
+  const t = it.type || 'shop';
+  const name = it.text || it.title || it.name || it.item || it.service || '';
+  return { shop: name, task: name, bill: name ? `bill: ${name}` : 'a bill', delivery: name ? `parcel: ${name}` : 'a parcel', event: name, trip: name ? `trip: ${name}` : 'a trip', child: name ? `${name} (Family)` : 'family details', utility: name ? `${name} (Utilities)` : 'a utility' }[t] || name;
+}
+const SECTION_FOR = { shop: 'shopping', task: 'tasks', bill: 'bills', delivery: 'deliveries', event: 'calendar', trip: 'travel', child: 'family', utility: 'utilities' };
 function syncNow() {
   if (!paired()) return Promise.resolve();
   if (syncPromise) return syncPromise;
@@ -2227,7 +2240,10 @@ function syncNow() {
       for (const [id, it] of Object.entries(local)) if (it.deleted && (it.updatedAt || 0) < cutoff) delete local[id];
       store.save(SHARED_KEY, local);
       const sent = Object.fromEntries(Object.entries(local).map(([id, it]) => [id, it.updatedAt]));
-      const merged = await syncShared(s.syncUrl, s.householdCode, local);
+      if (!knownIds) knownIds = new Set(Object.keys(local));
+      // Tell the server how many things this phone added (just a number) so it can let your partner know.
+      const added = Object.entries(local).filter(([id, it]) => !knownIds.has(id) && notable(it)).length;
+      const merged = await syncShared(s.syncUrl, s.householdCode, local, fetch, { device: deviceId(), added });
       // Keep only things changed on this phone while the request was in flight —
       // otherwise the server's answer wins (so it can't loop resending the same thing).
       let localNewer = false;
@@ -2237,6 +2253,16 @@ function syncNow() {
         if (!m || (it.updatedAt || 0) > (m.updatedAt || 0)) { merged[id] = it; localNewer = true; }
       }
       store.save(SHARED_KEY, merged);
+      // Things your partner added since this phone last looked → a quick note.
+      const fromPartner = Object.entries(merged).filter(([id, it]) => !(id in local) && !knownIds.has(id) && notable(it)).map(([, it]) => it);
+      knownIds = new Set(Object.keys(merged));
+      if (fromPartner.length && s.syncedOnce) {
+        const names = fromPartner.map(sharedLabel).filter(Boolean);
+        const shown = names.slice(0, 3).join(', ') + (names.length > 3 ? ` and ${names.length - 3} more` : '');
+        const where = SECTION_FOR[fromPartner[0].type || 'shop'];
+        toast(`${partnerName()} added ${shown || fromPartner.length + ' things'}`, { actionLabel: 'View', onAction: () => goLife(where), ms: 7000 });
+      }
+      if (!s.syncedOnce) saveSettings({ syncedOnce: true });
       if (dedupeShared() || localNewer) scheduleSync();
       renderSharedAll();
       setStatus('sync-status', 'Synced ' + new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }));
@@ -2386,6 +2412,7 @@ const persistMyName = debounce((v) => { saveSettings({ myName: v }); renderBills
 const persistPartnerName = debounce((v) => { saveSettings({ partnerName: v }); renderBills(); renderTasks(); }, 500);
 $('my-name').addEventListener('input', (e) => persistMyName(e.target.value.trim()));
 $('partner-name').addEventListener('input', (e) => persistPartnerName(e.target.value.trim()));
+$('partner-name').addEventListener('change', () => setTimeout(refreshPushLabel, 1500));
 
 function renderShared() {
   const items = store.load(SHARED_KEY, {});
@@ -2735,6 +2762,7 @@ async function onUnlockSubmit(e) {
 function lockApp() {
   vault.lock();
   mediaKey = null;
+  knownIds = null;
   stopLive();
   stopTrip(false);
   if (elm) {
@@ -3712,6 +3740,55 @@ function bankHolidayRows(fromISO, toISO) {
     .map((e) => ({ id: 'bh-' + e.date, title: `🇬🇧 ${e.title}`, date: e.date, time: '', who: 'Bank holiday', virtual: true }));
 }
 
+
+// ----- weather at home (Open-Meteo forecast, Met Office warnings) -----
+const WX_TEXT = (c) => (c === 0 ? 'Clear' : c <= 2 ? 'Partly cloudy' : c === 3 ? 'Cloudy' : c <= 48 ? 'Fog' : c <= 57 ? 'Drizzle' : c <= 67 ? 'Rain' : c <= 77 ? 'Snow' : c <= 82 ? 'Showers' : c <= 86 ? 'Snow showers' : 'Thunderstorms');
+const localNowISO = () => { const d = new Date(); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16); };
+function weatherCard() {
+  if (!paired()) return null;
+  const place = (settings().weatherPlace || 'Berkhamsted').trim();
+  const c = infoCached('hw:' + place.toLowerCase(), 30 * 60000, () => info('home-weather', { place }));
+  if (!c.fresh) c.refresh().then(() => renderDashboard()).catch(() => {});
+  const w = c.value;
+  if (!w || w.error || !w.now) return null;
+  const card = el('div', { class: 'card weather-card' });
+  const change = el('button', { class: 'link', type: 'button', text: 'Change' });
+  change.addEventListener('click', () => {
+    const v = prompt('Town for the weather (UK):', place);
+    if (v && v.trim()) { saveSettings({ weatherPlace: v.trim() }); renderDashboard(); }
+  });
+  card.append(el('div', { class: 'line' },
+    el('div', {}, el('div', { class: 'wx-now' }, el('span', { class: 'wx-big', text: WX(w.now.code) }), el('span', { class: 'wx-temp', text: `${Math.round(w.now.temp)}°` }),
+      el('span', { class: 'muted small', text: ` feels ${Math.round(w.now.feels)}°` })),
+    el('div', { class: 'sub', text: `${w.place} · ${WX_TEXT(w.now.code)} · wind ${Math.round(w.now.wind)} mph${w.now.gusts > 30 ? `, gusts ${Math.round(w.now.gusts)}` : ''}` })), change));
+  const nowISO = localNowISO();
+  const next = (w.hours || []).filter((h) => h.t >= nowISO.slice(0, 13)).slice(0, 12);
+  const wet = next.find((h) => h.rain >= 50);
+  const today = (w.days || [])[0];
+  const bits = [];
+  if (today) bits.push(`High ${Math.round(today.max)}° · low ${Math.round(today.min)}°`);
+  bits.push(wet ? `☔ Rain likely ${wet.t.slice(11, 13) === nowISO.slice(11, 13) ? 'now' : 'from ' + wet.t.slice(11, 16)} (${wet.rain}%)` : next.length ? 'Dry for the next 12 hours' : '');
+  if (today && today.sunset) bits.push(`sunset ${today.sunset.slice(11, 16)}`);
+  if (today && today.uv >= 5) bits.push(`UV ${Math.round(today.uv)} — suncream`);
+  card.append(el('p', { class: 'small', style: 'margin:8px 0', text: bits.filter(Boolean).join(' · ') }));
+  card.append(el('div', { class: 'wx-row' }, ...(w.days || []).slice(1, 6).map((d) => el('div', { class: 'wx-day' },
+    el('div', { class: 'muted small', text: new Date(d.date + 'T00:00:00').toLocaleDateString('en-GB', { weekday: 'short' }) }),
+    el('div', { class: 'wx-ico', text: WX(d.code) }), el('div', { class: 'small', text: `${Math.round(d.max)}° / ${Math.round(d.min)}°` }),
+    d.rain != null ? el('div', { class: 'muted small', text: `💧${d.rain}%` }) : null))));
+  // Met Office warnings for your county / region
+  const terms = [w.county, w.region].filter(Boolean);
+  if (terms.length) {
+    const wc = infoCached('warn:' + terms.join('|').toLowerCase(), 15 * 60000, () => info('warnings', { terms: terms.join('|') }));
+    if (!wc.fresh) wc.refresh().then(() => renderDashboard()).catch(() => {});
+    for (const x of (wc.value && wc.value.warnings) || []) {
+      card.append(el('a', { class: `wx-warn ${x.level}`, href: x.link || 'https://www.metoffice.gov.uk/weather/warnings-and-advice/uk-warnings', target: '_blank', rel: 'noopener' },
+        el('strong', { text: `⚠️ ${x.title}` }), x.text ? el('div', { class: 'small', text: x.text.length > 160 ? x.text.slice(0, 157) + '…' : x.text }) : null));
+    }
+  }
+  card.append(el('div', { class: 'muted small', style: 'margin-top:6px', text: 'Forecast: Open-Meteo (Met Office data) · Warnings: Met Office' }));
+  return card;
+}
+
 // ----- trips: weather, travel advice changes, currency -----
 const CURRENCY = { US: 'USD', TR: 'TRY', CH: 'CHF', CZ: 'CZK', HU: 'HUF', PL: 'PLN', DK: 'DKK', NO: 'NOK', SE: 'SEK', IS: 'ISK', RO: 'RON', CA: 'CAD', AU: 'AUD', NZ: 'NZD', JP: 'JPY', ZA: 'ZAR', MX: 'MXN', IN: 'INR', TH: 'THB' };
 const EURO = ['AT', 'BE', 'BG', 'CY', 'DE', 'EE', 'ES', 'FI', 'FR', 'GR', 'HR', 'IE', 'IT', 'LT', 'LU', 'LV', 'MT', 'NL', 'PT', 'SI', 'SK'];
@@ -3832,6 +3909,65 @@ function renderCompany() {
     el('p', { class: 'muted small', text: 'From Companies House. Corporation Tax dates are worked out from your accounting period — guidance only, check with your accountant.' }));
 }
 $('company-number')?.addEventListener('change', (e) => { saveSettings({ companyNumber: e.target.value.trim().toUpperCase().replace(/\s/g, '') }); renderCompany(); renderDashboard(); });
+
+// ----- notifications when your partner adds something (Web Push via your sync server) -----
+const pushSupported = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+const isIOS = () => /iPhone|iPad|iPod/.test(navigator.userAgent);
+const installed = () => window.matchMedia?.('(display-mode: standalone)').matches || navigator.standalone === true;
+async function pushRequest(action, body) {
+  const s = settings();
+  const h = await householdId(s.householdCode);
+  const res = await fetch(`${s.syncUrl.replace(/\/+$/, '')}/push/${action}?h=${h}`, { method: body ? 'POST' : 'GET', cache: 'no-store', headers: { 'Content-Type': 'application/json', 'X-Evergreen-Token': await writeToken(s.householdCode) }, body: body ? JSON.stringify(body) : undefined });
+  if (res.status === 404) throw new Error('Your sync server is still updating — try again in a few minutes.');
+  const j = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(j.error || `the server returned ${res.status}`);
+  return j;
+}
+const b64uToBytes = (s) => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((s.length + 3) % 4)), (c) => c.charCodeAt(0));
+async function renderPush() {
+  const btn = $('btn-push');
+  if (!btn) return;
+  const on = settings().pushOn && pushSupported() && Notification.permission === 'granted';
+  btn.textContent = on ? 'Turn off notifications' : 'Turn on notifications';
+  btn.classList.toggle('primary', !on);
+  if (!pushSupported()) setStatus('push-status', isIOS() && !installed() ? 'On iPhone, notifications work once Evergreen is on your Home Screen (Share → Add to Home Screen) — open it from there.' : "This phone's browser doesn't support notifications.", true);
+  else if (Notification.permission === 'denied') setStatus('push-status', "Notifications are blocked for Evergreen — allow them in the phone's settings (Settings → Notifications), then try again.", true);
+  else setStatus('push-status', on ? `On — you'll hear when ${partnerName()} adds something.` : '');
+}
+async function turnOnPush() {
+  if (!paired()) return setStatus('push-status', 'Set up sharing with your partner first.', true);
+  if (!pushSupported()) return renderPush();
+  setStatus('push-status', 'Asking permission…');
+  const perm = await Notification.requestPermission();
+  if (perm !== 'granted') return renderPush();
+  const reg = await navigator.serviceWorker.ready;
+  const { publicKey } = await pushRequest('key');
+  let sub = await reg.pushManager.getSubscription();
+  const keyMatches = sub && sub.options && sub.options.applicationServerKey && btoa(String.fromCharCode(...new Uint8Array(sub.options.applicationServerKey))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '') === publicKey;
+  if (sub && !keyMatches) { await sub.unsubscribe().catch(() => {}); sub = null; }
+  if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64uToBytes(publicKey) });
+  await pushRequest('subscribe', { device: deviceId(), label: partnerName() === 'Partner' ? 'Your partner' : partnerName(), sub: sub.toJSON() });
+  saveSettings({ pushOn: true });
+  haptic(); toast('Notifications on ✓');
+  renderPush();
+}
+async function turnOffPush() {
+  try { const reg = await navigator.serviceWorker.ready; const sub = await reg.pushManager.getSubscription(); if (sub) await sub.unsubscribe(); } catch { /* ignore */ }
+  try { await pushRequest('unsubscribe', { device: deviceId() }); } catch { /* server tidies up dead ones anyway */ }
+  saveSettings({ pushOn: false });
+  renderPush();
+}
+$('btn-push')?.addEventListener('click', () => {
+  const on = settings().pushOn && pushSupported() && Notification.permission === 'granted';
+  (on ? turnOffPush() : turnOnPush()).catch((e) => setStatus('push-status', e.message || "Couldn't turn notifications on.", true));
+});
+// Keep the server's label for your partner up to date if you change the name.
+function refreshPushLabel() {
+  if (!settings().pushOn || !pushSupported() || Notification.permission !== 'granted') return;
+  navigator.serviceWorker.ready.then((reg) => reg.pushManager.getSubscription()).then((sub) => sub && pushRequest('subscribe', { device: deviceId(), label: partnerName() === 'Partner' ? 'Your partner' : partnerName(), sub: sub.toJSON() })).catch(() => {});
+}
+// A notification was tapped, or arrived while open → fetch the new things now.
+navigator.serviceWorker?.addEventListener('message', (e) => { if (e.data === 'evergreen-sync' && !vault.locked) syncNow(); });
 
 // ---------- Family: key details for the children (shared, encrypted) ----------
 const CHILD_GROUPS = [
@@ -4288,7 +4424,7 @@ function renderLost() {
 
 // ---------- app updates ----------
 // Must match CACHE in sw.js (a test checks this).
-const APP_VERSION = 'evergreen-v59';
+const APP_VERSION = 'evergreen-v60';
 let updateReady = false;
 async function checkForUpdate(manual = false) {
   try {
@@ -4341,6 +4477,7 @@ async function migratePhotos() {
 async function initAll() {
   try {
     mediaKey = await vault.mediaKey();
+    knownIds = new Set(Object.keys(store.load(SHARED_KEY, {}))); // what's here now counts as seen
     await migratePhotos();
   } catch (e) {
     log('info', 'Media key/migrate: ' + e.message);

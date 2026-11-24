@@ -5,11 +5,12 @@
 // Cloudflare and bind a KV namespace called HOUSEHOLD (see README in this folder).
 
 import { handleInfo } from './info.js';
+import { handlePush, notifyOthers } from './push.js';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, X-Evergreen-Token',
+  'Access-Control-Allow-Headers': 'Content-Type, X-Evergreen-Token, X-Evergreen-Device, X-Evergreen-Notify',
 };
 const json = (obj, status = 200) => new Response(JSON.stringify(obj), { status, headers: { 'Content-Type': 'application/json', ...CORS } });
 
@@ -137,7 +138,7 @@ async function handleBlob(request, env, url) {
 }
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     if (request.method === 'OPTIONS') return new Response(null, { headers: CORS });
     const url = new URL(request.url);
 
@@ -172,12 +173,22 @@ export default {
     }
 
     // Public information (tariffs, trains, travel advice…): GET /info/<kind>?h=<household>&…
-    const infoMatch = url.pathname.match(/\/info\/([a-z]+)\/?$/);
+    const infoMatch = url.pathname.match(/\/info\/([a-z-]+)\/?$/);
     if (request.method === 'GET' && infoMatch) {
       const hid = url.searchParams.get('h') || '';
       if (!/^[a-f0-9]{16,64}$/.test(hid) || !(await env.HOUSEHOLD.get(hid))) return json({ error: 'unknown household — sync once first' }, 403);
       if (!(await authorised(request, env, hid))) return json({ error: 'not allowed' }, 401);
       const r = await handleInfo(env, url, infoMatch[1]);
+      return json(r.body, r.status || 200);
+    }
+
+    // Notifications: GET /push/key, POST /push/subscribe|unsubscribe ?h=<household>
+    const pushMatch = url.pathname.match(/\/push\/(key|subscribe|unsubscribe)\/?$/);
+    if (pushMatch && (request.method === 'POST' || pushMatch[1] === 'key')) {
+      const hid = url.searchParams.get('h') || '';
+      if (!/^[a-f0-9]{16,64}$/.test(hid) || !(await env.HOUSEHOLD.get(hid))) return json({ error: 'unknown household — sync once first' }, 403);
+      if (!(await authorised(request, env, hid))) return json({ error: 'not allowed' }, 401);
+      const r = await handlePush(request, env, hid, pushMatch[1]);
       return json(r.body, r.status || 200);
     }
 
@@ -208,6 +219,7 @@ export default {
         await env.HOUSEHOLD.put('retired:' + hid, JSON.stringify({ at: Date.now(), wipe: [...new Set([...prev, ...wipe])] }));
         await env.HOUSEHOLD.delete(hid);
         await env.HOUSEHOLD.delete('auth:' + hid);
+        await env.HOUSEHOLD.delete('push:' + hid);
         await deleteAllBlobs(env, hid);
         return json({ ok: true });
       }
@@ -249,6 +261,13 @@ export default {
       if (body.length > 2_000_000) return json({ error: 'too large' }, 413);
       // Only write when something changed: storage writes are limited (1,000 a day on the free plan).
       if (changed) await env.HOUSEHOLD.put(id, body);
+      // The phone says how many things it added (just a number — the server can't
+      // see what). Let the other phone know, without holding up this reply.
+      const added = Math.min(99, parseInt(request.headers.get('X-Evergreen-Notify') || '0', 10) || 0);
+      if (changed && added > 0) {
+        const job = notifyOthers(env, id, request.headers.get('X-Evergreen-Device') || '', { added }).catch(() => {});
+        if (ctx && ctx.waitUntil) ctx.waitUntil(job); else await job;
+      }
       return json(current);
     }
 

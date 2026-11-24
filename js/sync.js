@@ -10,7 +10,7 @@ const endpoint = (serverUrl, id) => serverUrl.replace(/\/+$/, '') + '/' + id;
  * @param localItems map of { itemId: { ...payload, updatedAt, deleted } }
  * @returns merged, decrypted map in the same shape
  */
-export async function syncShared(serverUrl, code, localItems, fetchImpl = fetch) {
+export async function syncShared(serverUrl, code, localItems, fetchImpl = fetch, { device = '', added = 0 } = {}) {
   const id = await householdId(code);
   const key = await deriveSharedKey(code);
 
@@ -23,7 +23,7 @@ export async function syncShared(serverUrl, code, localItems, fetchImpl = fetch)
 
   const res = await fetchImpl(endpoint(serverUrl, id), {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Evergreen-Token': await writeToken(code) },
+    headers: { 'Content-Type': 'application/json', 'X-Evergreen-Token': await writeToken(code), ...(device ? { 'X-Evergreen-Device': device } : {}), ...(added ? { 'X-Evergreen-Notify': String(added) } : {}) },
     body: JSON.stringify({ items: payload }),
   });
   if (!res.ok) throw new Error(`Sync server returned ${res.status}`);
