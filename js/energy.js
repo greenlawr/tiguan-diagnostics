@@ -8,6 +8,7 @@
 export const PRICE_CAPS = [
   { from: '2026-07-01', to: '2026-09-30', label: 'Jul–Sep 2026', elec: { unit: 26.11, standing: 57.19 }, gas: { unit: 7.33, standing: 29.04 } },
   { from: '2026-10-01', to: '2026-12-31', label: 'Oct–Dec 2026', elec: { unit: 26.32, standing: 54.83 }, gas: { unit: 7.97, standing: 29.68 } },
+  { from: '2027-01-01', to: '2027-03-31', label: 'Jan–Mar 2027', elec: { unit: 32.69, standing: 54.77 }, gas: { unit: 10.96, standing: 29.65 } },
 ];
 // Ofgem's typical household (used only if there's nothing better).
 export const TYPICAL = { elec: 2500, gas: 9500 };

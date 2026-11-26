@@ -5066,7 +5066,7 @@ function renderLost() {
 
 // ---------- app updates ----------
 // Must match CACHE in sw.js (a test checks this).
-const APP_VERSION = 'evergreen-v67';
+const APP_VERSION = 'evergreen-v68';
 let updateReady = false;
 async function checkForUpdate(manual = false) {
   try {

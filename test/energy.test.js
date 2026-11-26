@@ -35,3 +35,9 @@ test('comparison: cheapest first with the saving against your current deal', () 
   assert.deepEqual(r.map((x) => x.name), ['Cheap fix', 'Price cap']);
   assert.ok(r[0].saving > 300);
 });
+
+test('January 2027 cap is known ahead of time and gives Ofgem’s £2,166', async () => {
+  const { nextCap, capFor, tariffCost, TYPICAL } = await import('../js/energy.js');
+  assert.equal(nextCap('2026-11-26').label, 'Jan–Mar 2027');
+  assert.ok(Math.abs(tariffCost(capFor('2027-02-01'), TYPICAL) - 2166) < 2);
+});
